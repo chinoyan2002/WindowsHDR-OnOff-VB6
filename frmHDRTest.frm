@@ -1,6 +1,6 @@
 VERSION 5.00
 Begin VB.Form frmHDRTest
-   Caption         =   "Windows HDR ­ěĄÍ API ´ú¸Ő"
+   Caption         =   "Windows HDR 原生 API 測試"
    ClientHeight    =   9480
    ClientLeft      =   120
    ClientTop       =   450
@@ -10,7 +10,7 @@ Begin VB.Form frmHDRTest
    ScaleWidth      =   12480
    StartUpPosition =   2
    Begin VB.CommandButton cmdRead
-      Caption         =   "ĹŞ¨úĄŘ«eŞ¬şA"
+      Caption         =   "讀取狀態"
       Height          =   495
       Left            =   240
       TabIndex        =   0
@@ -18,7 +18,7 @@ Begin VB.Form frmHDRTest
       Width           =   1800
    End
    Begin VB.CommandButton cmdEnable
-      Caption         =   "¶}±Ň HDR"
+      Caption         =   "開啟 HDR"
       Height          =   495
       Left            =   2160
       TabIndex        =   1
@@ -26,7 +26,7 @@ Begin VB.Form frmHDRTest
       Width           =   1800
    End
    Begin VB.CommandButton cmdDisable
-      Caption         =   "Ăöł¬ HDR"
+      Caption         =   "關閉 HDR"
       Height          =   495
       Left            =   4080
       TabIndex        =   2
@@ -34,7 +34,7 @@ Begin VB.Form frmHDRTest
       Width           =   1800
    End
    Begin VB.CommandButton cmdToggle
-      Caption         =   "¤Á´« HDR"
+      Caption         =   "切換 HDR"
       Height          =   495
       Left            =   6000
       TabIndex        =   3
@@ -56,154 +56,175 @@ Attribute VB_GlobalNameSpace = False
 Attribute VB_Creatable = False
 Attribute VB_PredeclaredId = True
 Attribute VB_Exposed = False
-Attribute VB_Description = "Windows HDR ­ěĄÍ API ´ú¸ŐŞíłć"
+Attribute VB_Description = "Windows HDR 原生 API 測試表單"
 Attribute VB_Ext_KEY = "SavedWithLastKnownToolVersion", "6.00.9782.0"
 
 Option Explicit
 
-' ĹŞ¨úĄŘ«e©Ň¦łĹăĄÜľąŞş HDR / Advanced Color Ş¬şAˇC
+' 讀取所有顯示器的目前狀態並顯示在記錄視窗。
 Private Sub cmdRead_Click()
     ShowHDRStatus False
 End Sub
 
-' ¶}±Ň©Ň¦łĄŘ«e±ŇĄÎĹăĄÜľąŞş HDRˇC
+' 開啟所有 active 顯示器 HDR，設定後重新查詢驗證。
 Private Sub cmdEnable_Click()
-    txtOutput.Text = "Ąż¦bł]©wˇG¶}±Ň©Ň¦łĄŘ«e±ŇĄÎĹăĄÜľąŞş HDRˇKˇK" & vbCrLf
-    txtOutput.Text = txtOutput.Text & "¶}©l®É¶ˇˇG" & Format$(Now, "yyyy-mm-dd hh:nn:ss") & vbCrLf
-    txtOutput.Text = txtOutput.Text & String$(78, "-") & vbCrLf
+    AppendLog "開始執行：開啟 HDR。"
 
     If HDR_Enable() Then
-        txtOutput.Text = txtOutput.Text & "µ˛ŞGˇGHDR ł]©w¦¨Ą\ˇAĄB¤w§ą¦¨ąę»ÚŞ¬şAĹçĂŇˇC" & vbCrLf
+        AppendLog "結果：HDR 設定成功，且已完成實際狀態驗證。"
     Else
-        txtOutput.Text = txtOutput.Text & "µ˛ŞGˇGHDR ł]©wĄ˘±ŃˇC" & vbCrLf
-        txtOutput.Text = txtOutput.Text & "¸Ô˛Ó¸ę°TˇG" & HDR_GetLastErrorText() & vbCrLf
+        AppendLog "結果：HDR 設定失敗。"
+        AppendLog "詳細資訊：" & HDR_GetLastErrorText()
     End If
 
-    txtOutput.Text = txtOutput.Text & vbCrLf
     ShowHDRStatus True
 End Sub
 
-' Ăöł¬©Ň¦łĄŘ«e±ŇĄÎĹăĄÜľąŞş HDRˇC
+' 關閉所有 active 顯示器 HDR，設定後重新查詢驗證。
 Private Sub cmdDisable_Click()
-    txtOutput.Text = "Ąż¦bł]©wˇGĂöł¬©Ň¦łĄŘ«e±ŇĄÎĹăĄÜľąŞş HDRˇKˇK" & vbCrLf
-    txtOutput.Text = txtOutput.Text & "¶}©l®É¶ˇˇG" & Format$(Now, "yyyy-mm-dd hh:nn:ss") & vbCrLf
-    txtOutput.Text = txtOutput.Text & String$(78, "-") & vbCrLf
+    AppendLog "開始執行：關閉 HDR。"
 
     If HDR_Disable() Then
-        txtOutput.Text = txtOutput.Text & "µ˛ŞGˇGHDR Ăöł¬¦¨Ą\ˇAĄB¤w§ą¦¨ąę»ÚŞ¬şAĹçĂŇˇC" & vbCrLf
+        AppendLog "結果：HDR 關閉成功，且已完成實際狀態驗證。"
     Else
-        txtOutput.Text = txtOutput.Text & "µ˛ŞGˇGHDR Ăöł¬Ą˘±ŃˇC" & vbCrLf
-        txtOutput.Text = txtOutput.Text & "¸Ô˛Ó¸ę°TˇG" & HDR_GetLastErrorText() & vbCrLf
+        AppendLog "結果：HDR 關閉失敗。"
+        AppendLog "詳細資訊：" & HDR_GetLastErrorText()
     End If
 
-    txtOutput.Text = txtOutput.Text & vbCrLf
     ShowHDRStatus True
 End Sub
 
-' ±N©Ň¦łĄŘ«e±ŇĄÎĹăĄÜľąŞş HDR Ş¬şA¤ĎÂŕˇC
+' 依每一個顯示器目前狀態切換 HDR。
 Private Sub cmdToggle_Click()
-    txtOutput.Text = "Ąż¦b°ő¦ćˇG¤Á´«©Ň¦łĄŘ«e±ŇĄÎĹăĄÜľąŞş HDR Ş¬şAˇKˇK" & vbCrLf
-    txtOutput.Text = txtOutput.Text & "¶}©l®É¶ˇˇG" & Format$(Now, "yyyy-mm-dd hh:nn:ss") & vbCrLf
-    txtOutput.Text = txtOutput.Text & String$(78, "-") & vbCrLf
+    AppendLog "開始執行：切換 HDR。"
 
     If HDR_Toggle() Then
-        txtOutput.Text = txtOutput.Text & "µ˛ŞGˇGHDR ¤Á´«¦¨Ą\ˇAĄB¤w§ą¦¨ąę»ÚŞ¬şAĹçĂŇˇC" & vbCrLf
+        AppendLog "結果：HDR 切換成功，且已完成實際狀態驗證。"
     Else
-        txtOutput.Text = txtOutput.Text & "µ˛ŞGˇGHDR ¤Á´«Ą˘±ŃˇC" & vbCrLf
-        txtOutput.Text = txtOutput.Text & "¸Ô˛Ó¸ę°TˇG" & HDR_GetLastErrorText() & vbCrLf
+        AppendLog "結果：HDR 切換失敗。"
+        AppendLog "詳細資訊：" & HDR_GetLastErrorText()
     End If
 
-    txtOutput.Text = txtOutput.Text & vbCrLf
     ShowHDRStatus True
 End Sub
 
-' Şíłć¸ü¤J®ÉĄß§YĹăĄÜ¤@¦¸ĄŘ«e HDR Ş¬şAˇC
+' 表單載入時立即顯示目前 HDR 狀態。
 Private Sub Form_Load()
     ShowHDRStatus False
 End Sub
 
-' ĹăĄÜ§ąľăŞ¬şA»PÁcĹé¤¤¤ĺ°OżýˇFAppend=True ®É«OŻd«e­±ŞşľŢ§@°OżýˇC
-Private Sub ShowHDRStatus(Optional ByVal Append As Boolean = False)
-    Dim displays() As HDR_DISPLAY_INFO   ' ĄŘ«e©Ň¦ł active display ŞşŞ¬şAˇC
-    Dim i As Long                        ' ĹăĄÜľąŻÁ¤ŢˇC
-    Dim buildNumber As Long              ' Windows Build NumberˇC
-    Dim outputText As String             ' łĚ˛×ĹăĄÜ¦b¤ĺ¦r¤č¶ô¤¤ŞşÁcĹé¤¤¤ĺ°OżýˇC
+' 將一行繁體中文記錄加入輸出視窗。
+' messageText：要記錄的中文訊息。
+Private Sub AppendLog(ByVal messageText As String)
+    If Len(txtOutput.Text) > 0 Then
+        txtOutput.Text = txtOutput.Text & vbCrLf
+    End If
+
+    txtOutput.Text = txtOutput.Text & Format$(Now, "yyyy-mm-dd hh:nn:ss") & "　" & messageText
+    txtOutput.SelStart = Len(txtOutput.Text)
+End Sub
+
+' 顯示 Windows Build、API 模式與所有顯示器的狀態。
+' Append：True=接續現有記錄；False=清空後重新顯示。
+Private Sub ShowHDRStatus(ByVal Append As Boolean)
+    Dim displays() As HDR_DISPLAY_INFO       ' 所有 active 顯示器。
+    Dim i As Long                            ' 顯示器索引。
+    Dim buildNumber As Long                  ' Windows Build。
+    Dim outputText As String                 ' 本次產生的繁體中文輸出。
 
     If Append Then
         outputText = txtOutput.Text
-        If Len(outputText) > 0 Then outputText = outputText & vbCrLf
+
+        If Len(outputText) > 0 Then
+            outputText = outputText & vbCrLf & vbCrLf
+        End If
     Else
         outputText = vbNullString
     End If
 
-    outputText = outputText & "ĄŘ«eŞ¬şA°Ożý®É¶ˇˇG" & Format$(Now, "yyyy-mm-dd hh:nn:ss") & vbCrLf
-
     buildNumber = HDR_GetWindowsBuild()
-    outputText = outputText & "Windows Ş©Ą»˛Ő«ŘˇG" & CStr(buildNumber) & vbCrLf
-    outputText = outputText & "HDR ±±¨î¤¶­±ˇG" & HDR_GetApiModeText() & vbCrLf
+
+    outputText = outputText & "Windows 版本 Build：" & CStr(buildNumber) & vbCrLf
+    outputText = outputText & "HDR API 模式：" & HDR_GetApiModeText() & vbCrLf
     outputText = outputText & String$(78, "=") & vbCrLf
 
     If Not HDR_GetDisplays(displays) Then
-        outputText = outputText & "ĹŞ¨úĹăĄÜľąŞ¬şAĄ˘±ŃˇC" & vbCrLf
-        outputText = outputText & "¸Ô˛Ó¸ę°TˇG" & HDR_GetLastErrorText() & vbCrLf
+        outputText = outputText & "讀取顯示器失敗：" & HDR_GetLastErrorText() & vbCrLf
         txtOutput.Text = outputText
+        txtOutput.SelStart = Len(txtOutput.Text)
         Exit Sub
     End If
 
     On Error GoTo NoDisplays
 
     For i = LBound(displays) To UBound(displays)
-        outputText = outputText & "ĹăĄÜľą #" & CStr(displays(i).Index) & vbCrLf
-        outputText = outputText & "ĹăĄÜľą¦WşŮˇG" & displays(i).Name & vbCrLf
-        outputText = outputText & "°t±µľąĂŃ§O˝Xˇ]LUIDˇ^ˇG" & SignedHex8(displays(i).AdapterHigh) & SignedHex8(displays(i).AdapterLow) & vbCrLf
-        outputText = outputText & "ĹăĄÜĄŘĽĐĂŃ§O˝XˇG" & CStr(displays(i).TargetId) & vbCrLf
+        outputText = outputText & "顯示器 #" & CStr(displays(i).Index) & vbCrLf
+        outputText = outputText & "名稱：" & displays(i).Name & vbCrLf
+        outputText = outputText & "Adapter LUID：0x" & SignedHex8(displays(i).AdapterHigh) & SignedHex8(displays(i).AdapterLow) & vbCrLf
+        outputText = outputText & "Target ID：" & CStr(displays(i).TargetId) & vbCrLf
 
-        outputText = outputText & "°Ş°ĘşA˝dłňˇ]HDRˇ^¤ä´©ˇG" & BoolText(displays(i).HDRSupported) & vbCrLf
-        outputText = outputText & "°Ş°ĘşA˝dłňŻŕ¤OĄi§P©wˇG" & BoolText(displays(i).HDRCapabilityKnown) & vbCrLf
-        outputText = outputText & "¨ĎĄÎŞĚ HDR ł]©wˇG" & BoolText(displays(i).HDRUserEnabled) & vbCrLf
-        outputText = outputText & "HDR ąę»Ú±ŇĄÎˇG" & BoolText(displays(i).HDRActive) & vbCrLf
+        outputText = outputText & "HDR 支援：" & BoolText(displays(i).HDRSupported) & vbCrLf
+        outputText = outputText & "HDR 能力可判定：" & BoolText(displays(i).HDRCapabilityKnown) & vbCrLf
+        outputText = outputText & "HDR 使用者設定：" & BoolText(displays(i).HDRUserEnabled) & vbCrLf
+        outputText = outputText & "HDR 實際啟用：" & BoolText(displays(i).HDRActive) & vbCrLf
 
-        outputText = outputText & "¶i¶Ą¦â±m¤ä´©ˇG" & BoolText(displays(i).AdvancedColorSupported) & vbCrLf
-        outputText = outputText & "¶i¶Ą¦â±mąę»Ú±ŇĄÎˇG" & BoolText(displays(i).AdvancedColorActive) & vbCrLf
-        outputText = outputText & "¨ü¨ě¨t˛Î¬Fµ¦­­¨îˇG" & BoolText(displays(i).AdvancedColorLimitedByPolicy) & vbCrLf
-        outputText = outputText & "łQ¨t˛Î±j¨î°±ĄÎˇG" & BoolText(displays(i).AdvancedColorForceDisabled) & vbCrLf
+        outputText = outputText & "Advanced Color 支援：" & BoolText(displays(i).AdvancedColorSupported) & vbCrLf
+        outputText = outputText & "Advanced Color 實際啟用：" & BoolText(displays(i).AdvancedColorActive) & vbCrLf
+        outputText = outputText & "Advanced Color 受政策限制：" & BoolText(displays(i).AdvancedColorLimitedByPolicy) & vbCrLf
+        outputText = outputText & "Advanced Color 強制停用：" & BoolText(displays(i).AdvancedColorForceDisabled) & vbCrLf
 
-        outputText = outputText & "Ľs¦â°ěˇ]WCGˇ^¤ä´©ˇG" & BoolText(displays(i).WCGSupported) & vbCrLf
-        outputText = outputText & "¨ĎĄÎŞĚĽs¦â°ěł]©wˇG" & BoolText(displays(i).WCGUserEnabled) & vbCrLf
-        outputText = outputText & "Ľs¦â°ě±j¨î±ŇĄÎˇG" & BoolText(displays(i).WideColorEnforced) & vbCrLf
+        outputText = outputText & "WCG 支援：" & BoolText(displays(i).WCGSupported) & vbCrLf
+        outputText = outputText & "WCG 使用者設定：" & BoolText(displays(i).WCGUserEnabled) & vbCrLf
+        outputText = outputText & "Wide Color 強制：" & BoolText(displays(i).WideColorEnforced) & vbCrLf
 
-        outputText = outputText & "ĄŘ«eąę»Ú¦â±mĽŇ¦ˇˇG" & HDR_GetColorModeText(displays(i).ActiveColorMode) & vbCrLf
-        outputText = outputText & "ĹăĄÜľą¦WşŮ¨Ó·˝¬° EDIDˇG" & BoolText(displays(i).FriendlyNameFromEdid) & vbCrLf
-        outputText = outputText & "ĹăĄÜľą¦WşŮĄŃ¨t˛Î±j¨î«ü©wˇG" & BoolText(displays(i).FriendlyNameForced) & vbCrLf
-        outputText = outputText & "¦ąĹăĄÜľąłĚ«áżů»~˝XˇG" & CStr(displays(i).LastError) & vbCrLf
+        outputText = outputText & "目前色彩模式：" & ColorModeText(displays(i).ActiveColorMode) & vbCrLf
+        outputText = outputText & "名稱來自 EDID：" & BoolText(displays(i).FriendlyNameFromEdid) & vbCrLf
+        outputText = outputText & "強制 Target：" & BoolText(displays(i).FriendlyNameForced) & vbCrLf
+        outputText = outputText & "最後錯誤碼：" & CStr(displays(i).LastError) & vbCrLf
 
         If displays(i).HDRCapabilityKnown Then
-            outputText = outputText & "ĄŘ«e HDR Ş¬şAˇG" & HDR_GetStatusText(HDR_GetStatus(i)) & vbCrLf
+            outputText = outputText & "HDR 狀態：" & HDR_GetStatusText(HDR_GetStatus(i)) & vbCrLf
         Else
-            outputText = outputText & "ĄŘ«e HDR Ş¬şAˇGµLŞkĄŃÂÂŞ© API şë˝T§PÂ_" & vbCrLf
+            outputText = outputText & "HDR 狀態：舊版 API 無法精確拆分 HDR 與 WCG。" & vbCrLf
+            outputText = outputText & "Advanced Color 狀態：" & BoolText(displays(i).AdvancedColorActive) & vbCrLf
         End If
 
         outputText = outputText & String$(78, "-") & vbCrLf
     Next i
 
-    outputText = outputText & "ĄŘ«eŞ¬şAĹŞ¨ú§ą¦¨ˇC" & vbCrLf
     txtOutput.Text = outputText
+    txtOutput.SelStart = Len(txtOutput.Text)
     Exit Sub
 
 NoDisplays:
-    txtOutput.Text = outputText & "ĄŘ«e¨S¦ł±ŇĄÎ¤¤ŞşĹăĄÜľą PathˇC" & vbCrLf
+    txtOutput.Text = outputText & "目前沒有作用中的顯示器 Path。" & vbCrLf
+    txtOutput.SelStart = Len(txtOutput.Text)
 End Sub
 
-' ±N Boolean Âŕ¦¨©T©wÁcĹé¤¤¤ĺˇAÁ×§KżéĄX True / False ­^¤ĺ¦rĽËˇC
+' 將 Boolean 狀態轉成繁體中文「是 / 否」。
 Private Function BoolText(ByVal value As Boolean) As String
     If value Then
-        BoolText = "¬O"
+        BoolText = "是"
     Else
-        BoolText = "§_"
+        BoolText = "否"
     End If
 End Function
 
-' ±N 32-bit Long ĄH©T©w 8 ˝X¤Q¤»¶i¦ěĹăĄÜˇFło¬OĂŃ§O˝XˇA¤Ł¬O¦ŰµM»y¨Ą¤ĺ¦rˇC
+' 將 Active Color Mode 轉成繁體中文。
+Private Function ColorModeText(ByVal modeValue As Long) As String
+    Select Case modeValue
+        Case 0
+            ColorModeText = "SDR（標準動態範圍）"
+        Case 1
+            ColorModeText = "WCG（廣色域）"
+        Case 2
+            ColorModeText = "HDR（高動態範圍）"
+        Case Else
+            ColorModeText = "未知（" & CStr(modeValue) & "）"
+    End Select
+End Function
+
+' 將 32-bit Long 顯示成固定八碼十六進位。
 Private Function SignedHex8(ByVal value As Long) As String
-    SignedHex8 = "0x" & Right$("00000000" & Hex$(value), 8)
+    SignedHex8 = Right$("00000000" & Hex$(value), 8)
 End Function
