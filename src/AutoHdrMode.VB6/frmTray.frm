@@ -260,6 +260,7 @@ End Sub
 Private Sub StartTransition(ByVal wantOn As Boolean)
     Dim cfg As TransCfg
     If wantOn Then cfg = g_PowerOn Else cfg = g_PowerOff
+    If m_phase <> PH_IDLE And m_pending <> -1 Then LogMsg S_LogCancel(m_pending = 1) ' 舊排程被新狀態蓋掉：記取消再重排
     m_pending = PresentInt(wantOn)
     m_pendingDue = GetTickCount() + cfg.DelayHDR * 1000 ' 到期 tick：現在加延遲毫秒
     m_phase = PH_WAIT_HDR
