@@ -129,6 +129,8 @@ End Sub
 Private Sub ShowHDRStatus(ByVal Append As Boolean)
     Dim displays() As HDR_DISPLAY_INFO       ' 所有 active 顯示器。
     Dim i As Long                            ' 顯示器索引。
+    Dim majorVersion As Long                 ' Windows Major Version。
+    Dim minorVersion As Long                 ' Windows Minor Version。
     Dim buildNumber As Long                  ' Windows Build。
     Dim outputText As String                 ' 本次產生的繁體中文輸出。
 
@@ -142,9 +144,12 @@ Private Sub ShowHDRStatus(ByVal Append As Boolean)
         outputText = vbNullString
     End If
 
-    buildNumber = HDR_GetWindowsBuild()
+    If HDR_GetWindowsVersionInfo(majorVersion, minorVersion, buildNumber) Then
+        outputText = outputText & "Windows 版本：" & CStr(majorVersion) & "." & CStr(minorVersion) & "." & CStr(buildNumber) & vbCrLf
+    Else
+        outputText = outputText & "Windows 版本：無法取得" & vbCrLf
+    End If
 
-    outputText = outputText & "Windows 版本 Build：" & CStr(buildNumber) & vbCrLf
     outputText = outputText & "HDR API 模式：" & HDR_GetApiModeText() & vbCrLf
     outputText = outputText & String$(78, "=") & vbCrLf
 
