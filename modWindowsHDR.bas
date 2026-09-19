@@ -3,7 +3,7 @@ Option Explicit
 
 '=====================================================================
 ' Windows HDR / Advanced Color 原生 API 模組
-'
+' 修正 Windows 25H2 Build 版本偵測
 ' 設計原則：
 ' 1. 完全直接呼叫 Windows Display Configuration API。
 ' 2. Windows 11 24H2（Build 26100）以上使用新版 HDR API。
