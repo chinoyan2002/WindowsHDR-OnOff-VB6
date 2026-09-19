@@ -7,3 +7,11 @@ autohdrmode.log
 ahv_enum.txt
 # Local backup files
 *.bak
+# .NET / VS artifacts (archived sources only)
+bin/
+obj/
+.vs/
+*.user
+*.suo
+
+archive/snap-*/
