@@ -151,6 +151,7 @@ Private Sub ShowHDRStatus(ByVal Append As Boolean)
     End If
 
     outputText = outputText & "HDR API 模式：" & HDR_GetApiModeText() & vbCrLf
+    outputText = outputText & "版本資訊來源：" & HDR_GetWindowsVersionSource() & vbCrLf
     outputText = outputText & String$(78, "=") & vbCrLf
 
     If Not HDR_GetDisplays(displays) Then
