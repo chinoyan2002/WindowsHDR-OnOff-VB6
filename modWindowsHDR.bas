@@ -117,7 +117,7 @@ Private Const DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO_2_SIZE As Long = 36
 Private Const DISPLAYCONFIG_SET_HDR_STATE_SIZE As Long = 24
 
 ' RTL_OSVERSIONINFOEXW 在 32-bit VB6 下的完整結構大小。
-Private Const RTL_OSVERSIONINFOEXW_SIZE As Long = 284
+Private Const RTL_OSVERSIONINFOW_SIZE As Long = 20
 
 ' Windows 11 24H2 對應的最低 Build。
 Private Const WINDOWS_11_24H2_BUILD As Long = 26100
@@ -272,25 +272,60 @@ End Function
 ' 使用 RtlGetVersion 取得實際 Windows Build。
 ' osInfo：RTL_OSVERSIONINFOEXW 的 284-byte Byte Array。
 ' result：RtlGetVersion 回傳值。
-Public Function HDR_GetWindowsBuild() As Long
-    Dim osInfo() As Byte           ' Windows 版本結構的原始記憶體。
-    Dim result As Long             ' RtlGetVersion 的結果。
+Public Function HDR_GetWindowsVersionInfo( _
+    ByRef MajorVersion As Long, _
+    ByRef MinorVersion As Long, _
+    ByRef BuildNumber As Long) As Boolean
 
-    ReDim osInfo(0 To RTL_OSVERSIONINFOEXW_SIZE - 1)
+    Dim osInfo() As Byte           ' RTL_OSVERSIONINFOW 的 20-byte 原始結構。
+    Dim result As Long             ' RtlGetVersion 回傳值。
 
-    ' dwOSVersionInfoSize 位於結構 offset 0。
-    HDR_WriteLong osInfo, 0, RTL_OSVERSIONINFOEXW_SIZE
+    MajorVersion = 0
+    MinorVersion = 0
+    BuildNumber = 0
+    HDR_GetWindowsVersionInfo = False
+
+    ReDim osInfo(0 To RTL_OSVERSIONINFOW_SIZE - 1)
+
+    ' dwOSVersionInfoSize 位於 offset 0，必須先指定結構大小。
+    HDR_WriteLong osInfo, 0, RTL_OSVERSIONINFOW_SIZE
 
     result = RtlGetVersion(osInfo(0))
+
     If result <> ERROR_SUCCESS Then
-        HDR_SetLastError result, "取得 Windows Build 失敗。"
-        HDR_GetWindowsBuild = 0
+        HDR_SetLastError result, "取得 Windows 版本失敗。"
         Exit Function
     End If
 
-    ' dwBuildNumber 位於 offset 12。
-    HDR_GetWindowsBuild = HDR_ReadLong(osInfo, 12)
+    ' RTL_OSVERSIONINFOW 欄位：
+    ' offset 0  = dwOSVersionInfoSize
+    ' offset 4  = dwMajorVersion
+    ' offset 8  = dwMinorVersion
+    ' offset 12 = dwBuildNumber
+    ' offset 16 = dwPlatformId
+    MajorVersion = HDR_ReadLong(osInfo, 4)
+    MinorVersion = HDR_ReadLong(osInfo, 8)
+    BuildNumber = HDR_ReadLong(osInfo, 12)
+
     HDR_ClearLastError
+    HDR_GetWindowsVersionInfo = True
+End Function
+
+'=====================================================================
+' 公開函數：取得 Windows Build
+'=====================================================================
+
+' 只回傳目前 Windows 的 Build Number。
+Public Function HDR_GetWindowsBuild() As Long
+    Dim majorVersion As Long         ' Windows Major Version。
+    Dim minorVersion As Long         ' Windows Minor Version。
+    Dim buildNumber As Long          ' Windows Build Number。
+
+    If HDR_GetWindowsVersionInfo(majorVersion, minorVersion, buildNumber) Then
+        HDR_GetWindowsBuild = buildNumber
+    Else
+        HDR_GetWindowsBuild = 0
+    End If
 End Function
 
 '=====================================================================
@@ -299,10 +334,17 @@ End Function
 
 ' 依 Windows Build 判斷是否可使用新版 HDR API。
 Public Function HDR_IsWindows11_24H2() As Boolean
-    Dim buildNumber As Long          ' 實際 Windows Build。
+    Dim majorVersion As Long         ' Windows Major Version。
+    Dim minorVersion As Long         ' Windows Minor Version。
+    Dim buildNumber As Long          ' Windows Build Number。
 
-    buildNumber = HDR_GetWindowsBuild()
-    HDR_IsWindows11_24H2 = (buildNumber >= WINDOWS_11_24H2_BUILD)
+    If Not HDR_GetWindowsVersionInfo(majorVersion, minorVersion, buildNumber) Then
+        HDR_IsWindows11_24H2 = False
+        Exit Function
+    End If
+
+    ' Windows 10 / 11 都使用 Major=10；再以 Build 判斷 24H2+ HDR API。
+    HDR_IsWindows11_24H2 = (majorVersion >= 10 And buildNumber >= WINDOWS_11_24H2_BUILD)
 End Function
 
 '=====================================================================
