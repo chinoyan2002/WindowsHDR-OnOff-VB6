@@ -404,11 +404,29 @@ Public Function HDR_GetRtlVersionInfo( _
 End Function
 
 '=====================================================================
+' 公開函數：取得 Windows 版本資訊來源
+'=====================================================================
+
+' 回傳目前版本資訊的來源。
+' 正常情況下會是 Windows Registry，避免 VB6 IDE XP 相容模式影響版本值。
+Public Function HDR_GetWindowsVersionSource() As String
+    If Len(mWindowsVersionSource) = 0 Then
+        Dim majorVersion As Long       ' Windows Major Version。
+        Dim minorVersion As Long       ' Windows Minor Version。
+        Dim buildNumber As Long        ' Windows Build Number。
+
+        Call HDR_GetWindowsVersionInfo(majorVersion, minorVersion, buildNumber)
+    End If
+
+    HDR_GetWindowsVersionSource = mWindowsVersionSource
+End Function
+
+'=====================================================================
 ' 公開函數：判斷新版 HDR API 是否真的可用
 '=====================================================================
 
 ' 直接探測 DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO_2。
-' 這是 HDR API 路徑的真正判斷依據，不使用 Windows 版本號。
+' 這是 HDR API 路徑的真正判斷依據，不使用 VB6 IDE 可能受到 Shim 影響的版本 API。
 Public Function HDR_IsNewHDRApiAvailable() As Boolean
     Dim pathBuffer() As Byte             ' Active Path Buffer。
     Dim modeBuffer() As Byte             ' Mode Buffer。
@@ -464,7 +482,7 @@ End Function
 
 ' 保留原公開函數名稱，避免既有程式碼失效。
 ' 實際上已改為「直接探測新版 HDR API」，不再相信 Windows 版本號。
-Public Function HDR_IsNewHDRApiAvailable() As Boolean
+Public Function HDR_IsWindows11_24H2() As Boolean
     HDR_IsWindows11_24H2 = HDR_IsNewHDRApiAvailable()
 End Function
 
@@ -990,7 +1008,7 @@ End Function
 ' 私有函數：設定單一顯示器
 '=====================================================================
 
-' 依 Windows 版本使用正確的 Set API，並在 Set 後重新 Query 驗證。
+' 依實際探測到的 HDR API 能力選擇正確的 Set API，並在 Set 後重新 Query 驗證。
 ' info：要設定的顯示器。
 ' EnableHDR：True=開啟；False=關閉。
 Private Function HDR_SetDisplay(ByRef info As HDR_DISPLAY_INFO, ByVal EnableHDR As Boolean) As Boolean
