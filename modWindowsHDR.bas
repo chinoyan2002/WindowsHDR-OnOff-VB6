@@ -2,28 +2,29 @@ Attribute VB_Name = "modWindowsHDR"
 Option Explicit
 
 '=====================================================================
-' Windows HDR / Advanced Color ­ěĄÍ API ĽŇ˛Ő
+' Windows HDR / Advanced Color 原生 API 模組
 '
-' ĄD­nł]­pˇG
-' 1. §ąĄţŞ˝±µ©IĄs Windows Display Configuration APIˇC
-' 2. Windows 11 24H2ˇ]Build 26100ˇ^ĄH¤W¨ĎĄÎ·sŞ© HDR APIˇC
-' 3. ÂÂŞ© Windows ¨ĎĄÎ Advanced Color ¬Ű®eĽŇ¦ˇˇA¦ý¤Ł«_ĄRşë˝T HDRˇC
-' 4. ©Ň¦ł Set ľŢ§@§ą¦¨«áłŁĄ˛¶·­«·s¬d¸ß¨ĂĹçĂŇąę»ÚŞ¬şAˇC
-' 5. ©Ň¦łąďĄ~Ş¬şA¤ĺ¦r»Pżů»~°T®§©T©w¨ĎĄÎÁcĹé¤¤¤ĺˇC
-' 6. ¨ĎĄÎ Byte Array + RtlMoveMemoryˇAÁ×§K VB6 UDT / Union / Bit Field ąď»ô°ÝĂDˇC
+' 設計原則：
+' 1. 完全直接呼叫 Windows Display Configuration API。
+' 2. Windows 11 24H2（Build 26100）以上使用新版 HDR API。
+' 3. 舊版 Windows 使用 Advanced Color 相容 API，但不誤稱為精確 HDR API。
+' 4. 所有 Set 操作完成後都會重新查詢並驗證實際狀態。
+' 5. 所有錯誤與狀態文字均使用繁體中文。
+' 6. VB6 使用 Byte Array + RtlMoveMemory，避免 UDT / Union / Bit Field 對齊問題。
 '=====================================================================
 
-'-----------------------------
-' Win32 API «Ĺ§i
-'-----------------------------
+'---------------------------------------------------------------------
+' Windows API 宣告
+'---------------------------------------------------------------------
 
-' ¨ú±oĄŘ«eĹăĄÜ˛ŐşA©Ň»Ý­nŞş Path »P Mode Buffer ¤j¤pˇC
+' 取得目前 Display Configuration 所需的 Path / Mode Buffer 大小。
 Private Declare Function GetDisplayConfigBufferSizes Lib "user32.dll" ( _
     ByVal flags As Long, _
     ByRef numPathArrayElements As Long, _
     ByRef numModeInfoArrayElements As Long) As Long
 
-' ¨ú±oĄŘ«eŞşĹăĄÜ¸ô®|»PĽŇ¦ˇ¸ę°TˇFĄ»ĽŇ˛ŐĄu¬d¸ßĄŘ«e±ŇĄÎŞş PathˇC
+' 查詢目前 Display Configuration。
+' currentTopologyId 在 QDC_ONLY_ACTIVE_PATHS 模式下必須傳入 NULL。
 Private Declare Function QueryDisplayConfig Lib "user32.dll" ( _
     ByVal flags As Long, _
     ByRef numPathArrayElements As Long, _
@@ -32,87 +33,108 @@ Private Declare Function QueryDisplayConfig Lib "user32.dll" ( _
     ByRef modeInfoArray As Any, _
     ByVal currentTopologyId As Long) As Long
 
-' ¨Ě Adapter LUID + Target ID ¨ú±o«ü©w Display ŞşĂBĄ~¸ę°TˇC
+' 取得指定 Display Target 的裝置資訊。
 Private Declare Function DisplayConfigGetDeviceInfo Lib "user32.dll" ( _
     ByRef requestPacket As Any) As Long
 
-' ¨Ě Adapter LUID + Target ID ­×§ď«ü©w Display ŞşĹăĄÜł]©wˇC
+' 設定指定 Display Target 的裝置資訊。
 Private Declare Function DisplayConfigSetDeviceInfo Lib "user32.dll" ( _
     ByRef requestPacket As Any) As Long
 
-' ĄH¦ě¤¸˛Ő¤č¦ˇ¦wĄţĹŞĽg Windows API µ˛şcˇC
+' 直接複製記憶體，用於 Byte Array 與 32-bit 整數之間的安全轉換。
 Private Declare Sub CopyMemory Lib "kernel32" Alias "RtlMoveMemory" ( _
     ByRef Destination As Any, _
     ByRef Source As Any, _
     ByVal Length As Long)
 
-' ł]©w«áµĄ«Ý Windows §ą¦¨ĹăĄÜ˛ŐşA§ó·sˇA¦A¶i¦ć­«·s¬d¸ßĹçĂŇˇC
+' 設定完成後短暫等待 Windows 更新 Display Configuration。
 Private Declare Sub Sleep Lib "kernel32" (ByVal dwMilliseconds As Long)
 
-' ¨ú±oąę»Ú Windows Ş©Ą»ˇAÁ×§K¨ü¬Ű®e©Ę«Ĺ§iĽvĹTˇC
+' 取得實際 Windows OS Build，不依賴相容性層可能被虛擬化的版本字串。
 Private Declare Function RtlGetVersion Lib "ntdll.dll" ( _
     ByRef lpVersionInformation As Any) As Long
 
-'-----------------------------
-' Win32 żů»~˝X
-'-----------------------------
+'---------------------------------------------------------------------
+' Win32 錯誤碼
+'---------------------------------------------------------------------
 
 Private Const ERROR_SUCCESS As Long = 0
 Private Const ERROR_INVALID_FUNCTION As Long = 1
 Private Const ERROR_ACCESS_DENIED As Long = 5
 Private Const ERROR_INVALID_PARAMETER As Long = 87
 Private Const ERROR_INSUFFICIENT_BUFFER As Long = 122
-Private Const ERROR_GEN_FAILURE As Long = 31
 Private Const ERROR_NOT_SUPPORTED As Long = 50
 Private Const ERROR_NOT_FOUND As Long = 1168
+Private Const ERROR_GEN_FAILURE As Long = 31
 
-'-----------------------------
-' QueryDisplayConfig ±`ĽĆ
-'-----------------------------
+'---------------------------------------------------------------------
+' Display Configuration 常數
+'---------------------------------------------------------------------
 
-' Ąu¬d¸ßĄŘ«e±ŇĄÎŞşĹăĄÜ¸ô®|ˇF¦b¦ąĽŇ¦ˇ¤U currentTopologyId Ą˛¶·¬° NULLˇC
+' 只查詢目前 active 的 Display Path。
 Private Const QDC_ONLY_ACTIVE_PATHS As Long = 2
 
-'-----------------------------
-' DISPLAYCONFIG µ˛şc¤j¤p
-'-----------------------------
-
-' 32-bit VB6 ¨ĎĄÎŞş Windows Display Configuration µ˛şc¤j¤pˇC
-Private Const DISPLAYCONFIG_PATH_INFO_SIZE As Long = 72
-Private Const DISPLAYCONFIG_MODE_INFO_SIZE As Long = 64
-Private Const DISPLAYCONFIG_TARGET_DEVICE_NAME_SIZE As Long = 420
-Private Const DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO_SIZE As Long = 32
-Private Const DISPLAYCONFIG_SET_ADVANCED_COLOR_STATE_SIZE As Long = 24
-Private Const DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO_2_SIZE As Long = 36
-Private Const DISPLAYCONFIG_SET_HDR_STATE_SIZE As Long = 24
-
-' RTL_OSVERSIONINFOEXW ¦b 32-bit VB6 ¤¤°t¸m 284 bytesˇC
-Private Const RTL_OSVERSIONINFOEXW_SIZE As Long = 284
-
-'-----------------------------
-' DISPLAYCONFIG_DEVICE_INFO_TYPE
-'-----------------------------
-
+' DISPLAYCONFIG_DEVICE_INFO_TYPE。
 Private Const DISPLAYCONFIG_DEVICE_INFO_GET_TARGET_NAME As Long = 2
 Private Const DISPLAYCONFIG_DEVICE_INFO_GET_ADVANCED_COLOR_INFO As Long = 9
 Private Const DISPLAYCONFIG_DEVICE_INFO_SET_ADVANCED_COLOR_STATE As Long = 10
 Private Const DISPLAYCONFIG_DEVICE_INFO_GET_ADVANCED_COLOR_INFO_2 As Long = 15
 Private Const DISPLAYCONFIG_DEVICE_INFO_SET_HDR_STATE As Long = 16
 
-'-----------------------------
-' Active Color Mode
-'-----------------------------
+' Display Configuration Path flags。
+Private Const DISPLAYCONFIG_PATH_ACTIVE As Long = 1
 
+' Windows 11 HDR / Advanced Color Mode。
 Private Const DISPLAYCONFIG_ADVANCED_COLOR_MODE_SDR As Long = 0
 Private Const DISPLAYCONFIG_ADVANCED_COLOR_MODE_WCG As Long = 1
 Private Const DISPLAYCONFIG_ADVANCED_COLOR_MODE_HDR As Long = 2
 
-' DISPLAYCONFIG_PATH_INFO.targetInfo.status Şş ACTIVE bitˇC
-Private Const DISPLAYCONFIG_PATH_ACTIVE As Long = 1
+'---------------------------------------------------------------------
+' 結構大小
+'---------------------------------------------------------------------
 
-'-----------------------------
-' GET_ADVANCED_COLOR_INFO_2 ¦ě¤¸Äć¦ě
-'-----------------------------
+' DISPLAYCONFIG_PATH_INFO：sourceInfo 20 + targetInfo 48 + flags 4。
+Private Const DISPLAYCONFIG_PATH_INFO_SIZE As Long = 72
+
+' DISPLAYCONFIG_MODE_INFO 的 32-bit Windows API 結構固定配置大小。
+Private Const DISPLAYCONFIG_MODE_INFO_SIZE As Long = 64
+
+' DISPLAYCONFIG_TARGET_DEVICE_NAME：
+' Header 20 + Flags 4 + OutputTechnology 4 + EDID IDs 4 + Connector 4
+' + Friendly Name 128 + Device Path 256 = 420 bytes。
+Private Const DISPLAYCONFIG_TARGET_DEVICE_NAME_SIZE As Long = 420
+
+' 舊版 DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO。
+Private Const DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO_SIZE As Long = 32
+
+' 舊版 DISPLAYCONFIG_SET_ADVANCED_COLOR_STATE。
+Private Const DISPLAYCONFIG_SET_ADVANCED_COLOR_STATE_SIZE As Long = 24
+
+' Windows 11 24H2+ DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO_2。
+Private Const DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO_2_SIZE As Long = 36
+
+' Windows 11 24H2+ DISPLAYCONFIG_SET_HDR_STATE。
+Private Const DISPLAYCONFIG_SET_HDR_STATE_SIZE As Long = 24
+
+' RTL_OSVERSIONINFOEXW 在 32-bit VB6 下的完整結構大小。
+Private Const RTL_OSVERSIONINFOEXW_SIZE As Long = 284
+
+' Windows 11 24H2 對應的最低 Build。
+Private Const WINDOWS_11_24H2_BUILD As Long = 26100
+
+'---------------------------------------------------------------------
+' DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO_2 的 bitfield
+'
+' 官方 SDK 定義：
+' bit 0 advancedColorSupported
+' bit 1 advancedColorActive
+' bit 2 reserved
+' bit 3 advancedColorLimitedByPolicy
+' bit 4 highDynamicRangeSupported
+' bit 5 highDynamicRangeUserEnabled
+' bit 6 wideColorSupported
+' bit 7 wideColorUserEnabled
+'---------------------------------------------------------------------
 
 Private Const AC2_ADVANCED_COLOR_SUPPORTED As Long = 0
 Private Const AC2_ADVANCED_COLOR_ACTIVE As Long = 1
@@ -122,20 +144,19 @@ Private Const AC2_HDR_USER_ENABLED As Long = 5
 Private Const AC2_WIDE_COLOR_SUPPORTED As Long = 6
 Private Const AC2_WIDE_COLOR_USER_ENABLED As Long = 7
 
-'-----------------------------
-' ÂÂŞ© GET_ADVANCED_COLOR_INFO ¦ě¤¸Äć¦ě
-'-----------------------------
+'---------------------------------------------------------------------
+' DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO 的舊版 bitfield
+'---------------------------------------------------------------------
 
 Private Const AC1_ADVANCED_COLOR_SUPPORTED As Long = 0
 Private Const AC1_ADVANCED_COLOR_ENABLED As Long = 1
 Private Const AC1_WIDE_COLOR_ENFORCED As Long = 2
 Private Const AC1_ADVANCED_COLOR_FORCE_DISABLED As Long = 3
 
-'-----------------------------
-' ¤˝¶}Ş¬şA¦CÁ|
-'-----------------------------
+'---------------------------------------------------------------------
+' HDR 狀態列舉
+'---------------------------------------------------------------------
 
-' HDR Ş¬şAˇFUNKNOWN ĄÎ©óÂÂŞ© API µLŞkşë˝T°Ď¤Ŕ HDR / WCG Şş±ˇŞpˇC
 Public Enum HDR_STATUS
     HDR_UNSUPPORTED = 0
     HDR_OFF = 1
@@ -144,137 +165,166 @@ Public Enum HDR_STATUS
     HDR_STATUS_UNKNOWN = 4
 End Enum
 
-'-----------------------------
-' ĹăĄÜľą¸ę°Tµ˛şc
-'-----------------------------
+'---------------------------------------------------------------------
+' 顯示器資訊結構
+'
+' Index：供 VB6 UI 使用的陣列索引，不是 Windows Target ID。
+' AdapterLow / AdapterHigh：Windows Display Configuration 的 Adapter LUID。
+' TargetId：Windows Display Configuration Target Identifier。
+' Name：顯示器 Friendly Name。
+'
+' HDRSupported：新版 API 精確取得的 HDR capability。
+' HDRCapabilityKnown：HDRSupported 是否可信。
+' HDRUserEnabled：Windows HDR 使用者設定狀態。
+' HDRActive：實際 Active Color Mode 是否為 HDR。
+'
+' AdvancedColorSupported / Active：Advanced Color 能力與實際狀態。
+' AdvancedColorLimitedByPolicy：Advanced Color 是否受到政策限制。
+' AdvancedColorForceDisabled：舊版 API 的強制停用狀態。
+'
+' WCGSupported / WCGUserEnabled：Wide Color / WCG 資訊。
+' WideColorEnforced：舊版 API 的 Wide Color 強制狀態。
+'
+' ActiveColorMode：0 SDR、1 WCG、2 HDR。
+' FriendlyNameFromEdid / Forced：Friendly Name 來源旗標。
+' LastError：此顯示器最後一次 API 操作錯誤碼。
+'---------------------------------------------------------------------
 
-' ¨C­ÓĄŘ«e±ŇĄÎŞş Display Path ąďŔł¤@µ§¸ę®ĆˇC
 Public Type HDR_DISPLAY_INFO
-    ' UI ¨ĎĄÎŞşĹăĄÜľąŻÁ¤ŢˇA¤Ł¬O Windows DisplayConfig Target ĂŃ§O˝XˇC
+    ' UI 顯示索引。
     Index As Long
 
-    ' Windows Display Configuration Şş Adapter LUIDˇA¤Ŕ¦¨§C¦ě»P°Ş¦ěŔx¦sˇC
+    ' Windows Adapter LUID。
     AdapterLow As Long
     AdapterHigh As Long
 
-    ' Windows Display Configuration Şş Target IDˇC
+    ' Windows Display Target ID。
     TargetId As Long
 
-    ' ±q DISPLAYCONFIG_TARGET_DEVICE_NAME ¨ú±oŞş¤Íµ˝ĹăĄÜľą¦WşŮˇC
+    ' 顯示器 Friendly Name。
     Name As String
 
-    ' 24H2+ Ąişë˝T¨ú±oŞş HDR Capability »PŞ¬şAˇC
+    ' 新版 API 的 HDR capability。
     HDRSupported As Boolean
+    ' False 表示目前 API 無法精確判定 HDR capability。
     HDRCapabilityKnown As Boolean
+    ' Windows 使用者設定是否啟用 HDR。
     HDRUserEnabled As Boolean
+    ' 實際 Active Color Mode 是否為 HDR。
     HDRActive As Boolean
 
-    ' Advanced Color Ş¬şAˇF¦ąÄć¦ě»P HDR ¤Ŕ¶}łB˛zˇC
+    ' Advanced Color 相關能力與狀態。
     AdvancedColorSupported As Boolean
     AdvancedColorActive As Boolean
     AdvancedColorLimitedByPolicy As Boolean
     AdvancedColorForceDisabled As Boolean
 
-    ' Wide Color / WCG ¬ŰĂöŞ¬şAˇC
+    ' Wide Color / WCG 相關資訊。
     WCGSupported As Boolean
     WCGUserEnabled As Boolean
     WideColorEnforced As Boolean
 
-    ' ĄŘ«eąę»Ú¦â±mĽŇ¦ˇˇG0=SDRˇB1=WCGˇB2=HDRˇFÂÂŞ© API µLŞkşë˝T¨ú±o®É¬° -1ˇC
+    ' 0=SDR、1=WCG、2=HDR；舊版 API 為 -1。
     ActiveColorMode As Long
 
-    ' ĹăĄÜľą¦WşŮ¨Ó·˝şXĽĐˇG¨Ó¦Ű EDID ©ÎłQ±j¨î«ü©wˇC
+    ' Friendly Name 來源旗標。
     FriendlyNameFromEdid As Boolean
     FriendlyNameForced As Boolean
 
-    ' ¦ąĹăĄÜľąłĚ«á¤@¦¸ API ¬d¸ß©ÎĹçĂŇżů»~˝XˇF0 ŞíĄÜ¦¨Ą\ˇC
+    ' 每一個 Display 的最後錯誤。
     LastError As Long
 End Type
 
-'-----------------------------
-' ĽŇ˛Ő¤şżů»~Ş¬şA
-'-----------------------------
-
-' Ŕx¦słĚ«á¤@¦¸ĽŇ˛ŐľŢ§@Şş Win32 żů»~˝XˇC
+' 模組層級最後錯誤碼。
 Private mLastError As Long
 
-' Ŕx¦s©T©w¬°ÁcĹé¤¤¤ĺŞşżů»~´y­zˇAÁ×§KŞ˝±µżéĄX Windows ­^¤ĺ¤ĺ¦rˇC
+' 模組層級繁體中文錯誤訊息。
 Private mLastErrorText As String
 
 '=====================================================================
-' ¤˝¶}¨çĽĆˇG¨ú±ołĚ«áżů»~˝X
-' Ą\ŻŕˇG¨Ń UI ©Î¤WĽhµ{¦ˇĹŞ¨úłĚ«á¤@¦¸ĽŇ˛ŐľŢ§@Şş Win32 żů»~˝XˇC
+' 公開函數：取得最後錯誤碼
 '=====================================================================
+
+' 回傳模組最近一次 Windows API 操作的 Win32 錯誤碼。
 Public Function HDR_GetLastError() As Long
     HDR_GetLastError = mLastError
 End Function
 
 '=====================================================================
-' ¤˝¶}¨çĽĆˇG¨ú±ołĚ«áżů»~¤ĺ¦r
-' Ą\ŻŕˇG©Ň¦ł¦^¶Ç¤ş®e©T©w¨ĎĄÎÁcĹé¤¤¤ĺˇC
+' 公開函數：取得最後錯誤文字
 '=====================================================================
+
+' 回傳只包含繁體中文描述與錯誤碼的錯誤訊息。
 Public Function HDR_GetLastErrorText() As String
     If Len(mLastErrorText) > 0 Then
         HDR_GetLastErrorText = mLastErrorText
     ElseIf mLastError = ERROR_SUCCESS Then
-        HDR_GetLastErrorText = "ľŢ§@¦¨Ą\ˇC"
+        HDR_GetLastErrorText = "操作成功。"
     Else
-        HDR_GetLastErrorText = HDR_FormatWin32ErrorChinese(mLastError)
+        HDR_GetLastErrorText = HDR_ErrorTextChinese(mLastError)
     End If
 End Function
 
 '=====================================================================
-' ¤˝¶}¨çĽĆˇG¨ú±o Windows Build
-' Ą\ŻŕˇG¨ĎĄÎ RtlGetVersion ¨ú±oąę»Ú Windows Build NumberˇC
+' 公開函數：取得 Windows Build
 '=====================================================================
+
+' 使用 RtlGetVersion 取得實際 Windows Build。
+' osInfo：RTL_OSVERSIONINFOEXW 的 284-byte Byte Array。
+' result：RtlGetVersion 回傳值。
 Public Function HDR_GetWindowsBuild() As Long
-    Dim osInfo() As Byte          ' RTL_OSVERSIONINFOEXW Şş­ě©l°OľĐĹéˇC
-    Dim result As Long            ' RtlGetVersion ¦^¶Ç­ČˇC
+    Dim osInfo() As Byte           ' Windows 版本結構的原始記憶體。
+    Dim result As Long             ' RtlGetVersion 的結果。
 
     ReDim osInfo(0 To RTL_OSVERSIONINFOEXW_SIZE - 1)
 
-    ' dwOSVersionInfoSize ¦ě©ó offset 0ˇAĄ˛¶·¶ń¤Jµ˛şc¤j¤pˇC
+    ' dwOSVersionInfoSize 位於結構 offset 0。
     HDR_WriteLong osInfo, 0, RTL_OSVERSIONINFOEXW_SIZE
 
     result = RtlGetVersion(osInfo(0))
     If result <> ERROR_SUCCESS Then
-        HDR_SetLastError result, "ĹŞ¨ú Windows Ş©Ą»Ą˘±Ń"
+        HDR_SetLastError result, "取得 Windows Build 失敗。"
         HDR_GetWindowsBuild = 0
         Exit Function
     End If
 
-    ' RTL_OSVERSIONINFOEXWˇGdwBuildNumber ¦ě©ó offset 12ˇC
+    ' dwBuildNumber 位於 offset 12。
     HDR_GetWindowsBuild = HDR_ReadLong(osInfo, 12)
     HDR_ClearLastError
 End Function
 
 '=====================================================================
-' ¤˝¶}¨çĽĆˇG§PÂ_¬O§_¨ĎĄÎ Windows 11 24H2+ HDR API
-' Ą\ŻŕˇGBuild >= 26100 ®É¨« GET_ADVANCED_COLOR_INFO_2 / SET_HDR_STATEˇC
+' 公開函數：判斷是否使用 Windows 11 24H2+ API
 '=====================================================================
+
+' 依 Windows Build 判斷是否可使用新版 HDR API。
 Public Function HDR_IsWindows11_24H2() As Boolean
-    Dim buildNumber As Long        ' ąę»Ú Windows Build NumberˇC
+    Dim buildNumber As Long          ' 實際 Windows Build。
 
     buildNumber = HDR_GetWindowsBuild()
-    HDR_IsWindows11_24H2 = (buildNumber >= 26100)
+    HDR_IsWindows11_24H2 = (buildNumber >= WINDOWS_11_24H2_BUILD)
 End Function
 
 '=====================================================================
-' ¤˝¶}¨çĽĆˇG¨ú±oĄŘ«e API ĽŇ¦ˇŞşÁcĹé¤¤¤ĺ¦WşŮˇC
+' 公開函數：取得目前 API 模式文字
 '=====================================================================
+
+' 回傳目前程式使用的 HDR API 路徑。
 Public Function HDR_GetApiModeText() As String
     If HDR_IsWindows11_24H2() Then
-        HDR_GetApiModeText = "Windows 11 24H2 ĄH¤WˇG­ěĄÍ HDR Ş¬şA¤¶­±"
+        HDR_GetApiModeText = "Windows 11 24H2 以上：新版 HDR API"
     Else
-        HDR_GetApiModeText = "ÂÂŞ© WindowsˇGAdvanced Color ¬Ű®e¤¶­±"
+        HDR_GetApiModeText = "舊版 Windows：Advanced Color 相容 API"
     End If
 End Function
 
 '=====================================================================
-' ¤˝¶}¨çĽĆˇG¨ú±oĄŘ«e±ŇĄÎŞşĹăĄÜľąĽĆ¶qˇC
+' 公開函數：取得顯示器數量
 '=====================================================================
+
+' 取得目前所有 active Display Path 的數量；失敗回傳 -1。
 Public Function HDR_GetDisplayCount() As Long
-    Dim displays() As HDR_DISPLAY_INFO   ' ©Ň¦łĄŘ«e active display ŞşŞ¬şA°}¦CˇC
+    Dim displays() As HDR_DISPLAY_INFO       ' 所有 active 顯示器資訊。
 
     If Not HDR_GetDisplays(displays) Then
         HDR_GetDisplayCount = -1
@@ -289,15 +339,17 @@ Public Function HDR_GetDisplayCount() As Long
 End Function
 
 '=====================================================================
-' ¤˝¶}¨çĽĆˇG¨ú±o©Ň¦łĄŘ«e±ŇĄÎĹăĄÜľąŞş§ąľăŞ¬şAˇC
-' Ą\ŻŕˇGĄý¨ú±o Display PathˇA¦A¨Ě¨C­Ó Target ¬d¸ß¦WşŮ»P HDR ¸ę°TˇC
+' 公開函數：取得所有 active 顯示器資訊
 '=====================================================================
+
+' 查詢所有目前 active 的顯示器，並填入 Displays 陣列。
+' Displays：輸出的顯示器資訊陣列。
 Public Function HDR_GetDisplays(ByRef Displays() As HDR_DISPLAY_INFO) As Boolean
-    Dim pathBuffer() As Byte             ' DISPLAYCONFIG_PATH_INFO °}¦C­ě©l BufferˇC
-    Dim modeBuffer() As Byte             ' DISPLAYCONFIG_MODE_INFO °}¦C­ě©l BufferˇC
-    Dim pathCount As Long                ' ąę»Ú¦^¶ÇŞş Display Path ĽĆ¶qˇC
-    Dim modeCount As Long                ' ąę»Ú¦^¶ÇŞş Mode ĽĆ¶qˇC
-    Dim i As Long                        ' ĹăĄÜľą°}¦CŻÁ¤ŢˇC
+    Dim pathBuffer() As Byte         ' DISPLAYCONFIG_PATH_INFO 原始 Buffer。
+    Dim modeBuffer() As Byte         ' DISPLAYCONFIG_MODE_INFO 原始 Buffer。
+    Dim pathCount As Long            ' Active Path 數量。
+    Dim modeCount As Long            ' Mode Info 數量。
+    Dim i As Long                    ' 顯示器迴圈索引。
 
     Erase Displays
     HDR_ClearLastError
@@ -319,23 +371,25 @@ Public Function HDR_GetDisplays(ByRef Displays() As HDR_DISPLAY_INFO) As Boolean
 End Function
 
 '=====================================================================
-' ¤˝¶}¨çĽĆˇG¨ú±o«ü©wĹăĄÜľąŞş HDR Ş¬şAˇC
-' Ą\ŻŕˇG¦^¶Ç HDR ¶}±ŇˇBĂöł¬ˇB¤Ł¤ä´©ˇBĄĽŞľ©Îżů»~ˇC
+' 公開函數：取得指定顯示器 HDR 狀態
 '=====================================================================
+
+' 依 UI Index 取得 HDR 狀態。
+' DisplayIndex：HDR_GetDisplays 回傳陣列中的索引。
 Public Function HDR_GetStatus(ByVal DisplayIndex As Long) As HDR_STATUS
-    Dim displays() As HDR_DISPLAY_INFO   ' ©Ň¦łĄŘ«eĹăĄÜľą¸ę°TˇC
+    Dim displays() As HDR_DISPLAY_INFO       ' 目前所有顯示器。
 
     HDR_GetStatus = HDR_ERROR
 
     If Not HDR_GetDisplays(displays) Then Exit Function
 
     If Not HDR_ArrayAllocated(displays) Then
-        HDR_SetLastError ERROR_INVALID_PARAMETER, "ĄŘ«e¨S¦łĄiĄÎŞş±ŇĄÎ¤¤ĹăĄÜľąˇC"
+        HDR_SetLastError ERROR_NOT_FOUND, "目前沒有可用的作用中顯示器。"
         Exit Function
     End If
 
     If DisplayIndex < LBound(displays) Or DisplayIndex > UBound(displays) Then
-        HDR_SetLastError ERROR_INVALID_PARAMETER, "«ü©wŞşĹăĄÜľąŻÁ¤ŢµL®ÄˇC"
+        HDR_SetLastError ERROR_INVALID_PARAMETER, "指定的顯示器索引無效。"
         Exit Function
     End If
 
@@ -354,72 +408,63 @@ Public Function HDR_GetStatus(ByVal DisplayIndex As Long) As HDR_STATUS
 End Function
 
 '=====================================================================
-' ¤˝¶}¨çĽĆˇG±N HDR_STATUS Âŕ¦¨ÁcĹé¤¤¤ĺˇC
+' 公開函數：HDR 狀態文字
 '=====================================================================
+
+' 將 HDR_STATUS 轉成繁體中文狀態文字。
 Public Function HDR_GetStatusText(ByVal Status As HDR_STATUS) As String
     Select Case Status
         Case HDR_UNSUPPORTED
-            HDR_GetStatusText = "HDR ¤Ł¤ä´©"
+            HDR_GetStatusText = "HDR 不支援"
         Case HDR_OFF
-            HDR_GetStatusText = "HDR ¤wĂöł¬"
+            HDR_GetStatusText = "HDR 已關閉"
         Case HDR_ON
-            HDR_GetStatusText = "HDR ¤w¶}±Ň"
+            HDR_GetStatusText = "HDR 已開啟"
         Case HDR_ERROR
-            HDR_GetStatusText = "HDR µoĄÍżů»~"
+            HDR_GetStatusText = "HDR 操作錯誤"
         Case HDR_STATUS_UNKNOWN
-            HDR_GetStatusText = "HDR Żŕ¤OĄĽŞľˇ]ÂÂŞ© API µLŞkşë˝T°Ď¤Ŕ HDR »P WCGˇ^"
+            HDR_GetStatusText = "HDR 能力未知（目前 API 無法精確判定）"
         Case Else
-            HDR_GetStatusText = "ĄĽŞľŞş HDR Ş¬şA"
+            HDR_GetStatusText = "未知狀態"
     End Select
 End Function
 
 '=====================================================================
-' ¤˝¶}¨çĽĆˇG±N Windows Active Color Mode Âŕ¦¨ÁcĹé¤¤¤ĺˇC
-' Ą\ŻŕˇG¨Ń UI ©Î¤WĽhµ{¦ˇ˛Î¤@ĹăĄÜ SDRˇBWCGˇBHDR ©ÎĄĽŞľĽŇ¦ˇˇC
+' 公開函數：開啟所有顯示器 HDR
 '=====================================================================
-Public Function HDR_GetColorModeText(ByVal ModeValue As Long) As String
-    Select Case ModeValue
-        Case DISPLAYCONFIG_ADVANCED_COLOR_MODE_SDR
-            HDR_GetColorModeText = "SDRˇ]ĽĐ·Ç°ĘşA˝dłňˇ^"
-        Case DISPLAYCONFIG_ADVANCED_COLOR_MODE_WCG
-            HDR_GetColorModeText = "WCGˇ]Ľs¦â°ěˇ^"
-        Case DISPLAYCONFIG_ADVANCED_COLOR_MODE_HDR
-            HDR_GetColorModeText = "HDRˇ]°Ş°ĘşA˝dłňˇ^"
-        Case Else
-            HDR_GetColorModeText = "ĄĽŞľ¦â±mĽŇ¦ˇ"
-    End Select
-End Function
 
-'=====================================================================
-' ¤˝¶}¨çĽĆˇG¶}±Ň©Ň¦łĄŘ«e±ŇĄÎĹăĄÜľąŞş HDRˇC
-'=====================================================================
+' 對所有 active 顯示器執行 HDR ON，完成後重新查詢驗證。
 Public Function HDR_Enable() As Boolean
     HDR_Enable = HDR_SetAllDisplays(True)
 End Function
 
 '=====================================================================
-' ¤˝¶}¨çĽĆˇGĂöł¬©Ň¦łĄŘ«e±ŇĄÎĹăĄÜľąŞş HDRˇC
+' 公開函數：關閉所有顯示器 HDR
 '=====================================================================
+
+' 對所有 active 顯示器執行 HDR OFF，完成後重新查詢驗證。
 Public Function HDR_Disable() As Boolean
     HDR_Disable = HDR_SetAllDisplays(False)
 End Function
 
 '=====================================================================
-' ¤˝¶}¨çĽĆˇG¤Á´«©Ň¦łĄŘ«e±ŇĄÎĹăĄÜľąŞş HDR Ş¬şAˇC
+' 公開函數：切換所有顯示器 HDR
 '=====================================================================
+
+' 依每一個顯示器目前實際狀態逐一切換 HDR。
 Public Function HDR_Toggle() As Boolean
-    Dim displays() As HDR_DISPLAY_INFO   ' ©Ň¦łĄŘ«eĹăĄÜľąŞşłĚ·sŞ¬şAˇC
-    Dim i As Long                        ' ĹăĄÜľą°}¦CŻÁ¤ŢˇC
-    Dim okAll As Boolean                 ' ¬O§_©Ň¦łĹăĄÜľąłŁ¦¨Ą\ˇC
-    Dim firstError As Long               ' ˛Ä¤@­ÓĄ˘±ŃŞş Win32 żů»~˝XˇC
-    Dim targetState As Boolean            ' ¦ąĹăĄÜľą·ÇłĆ¤Á´«¨ěŞşŞ¬şAˇC
+    Dim displays() As HDR_DISPLAY_INFO       ' 所有 active 顯示器。
+    Dim i As Long                            ' 顯示器索引。
+    Dim okAll As Boolean                     ' 是否全部成功。
+    Dim firstError As Long                   ' 第一個錯誤碼。
+    Dim targetState As Boolean               ' 此顯示器的目標狀態。
 
     HDR_Toggle = False
 
     If Not HDR_GetDisplays(displays) Then Exit Function
 
     If Not HDR_ArrayAllocated(displays) Then
-        HDR_SetLastError ERROR_INVALID_PARAMETER, "ĄŘ«e¨S¦łĄiĄÎŞş±ŇĄÎ¤¤ĹăĄÜľąˇC"
+        HDR_SetLastError ERROR_NOT_FOUND, "目前沒有可用的作用中顯示器。"
         Exit Function
     End If
 
@@ -428,24 +473,22 @@ Public Function HDR_Toggle() As Boolean
 
     For i = LBound(displays) To UBound(displays)
         If HDR_IsWindows11_24H2() Then
-            If Not displays(i).HDRCapabilityKnown Then
+            ' 新版 API 必須有可確認的 HDR capability。
+            If Not displays(i).HDRCapabilityKnown Or Not displays(i).HDRSupported Then
                 okAll = False
                 If firstError = ERROR_SUCCESS Then firstError = ERROR_NOT_SUPPORTED
-                displays(i).LastError = ERROR_NOT_SUPPORTED
-            ElseIf Not displays(i).HDRSupported Then
-                okAll = False
-                If firstError = ERROR_SUCCESS Then firstError = ERROR_NOT_SUPPORTED
-                displays(i).LastError = ERROR_NOT_SUPPORTED
             Else
                 targetState = Not displays(i).HDRActive
+
                 If Not HDR_SetDisplay(displays(i), targetState) Then
                     okAll = False
                     If firstError = ERROR_SUCCESS Then firstError = mLastError
                 End If
             End If
         Else
-            ' ÂÂŞ©ĄuĄH Advanced Color Active §@¬°¤Á´«¨ĚľÚˇC
+            ' 舊版只能切換 Advanced Color。
             targetState = Not displays(i).AdvancedColorActive
+
             If Not HDR_SetDisplay(displays(i), targetState) Then
                 okAll = False
                 If firstError = ERROR_SUCCESS Then firstError = mLastError
@@ -457,27 +500,31 @@ Public Function HDR_Toggle() As Boolean
         HDR_ClearLastError
     Else
         If firstError = ERROR_SUCCESS Then firstError = ERROR_GEN_FAILURE
-        HDR_SetLastError firstError, "łˇ¤Ŕ©ÎĄţłˇĹăĄÜľą¤Á´«Ą˘±ŃˇC"
+        HDR_SetLastError firstError, "部分或全部顯示器切換失敗。"
     End If
 
     HDR_Toggle = okAll
 End Function
 
 '=====================================================================
-' ¤˝¶}¨çĽĆˇGł]©w«ü©wĹăĄÜľąŞş HDRˇC
+' 公開函數：指定顯示器 HDR ON / OFF
 '=====================================================================
+
+' 依 UI Index 設定單一顯示器 HDR。
+' DisplayIndex：目標顯示器索引。
+' EnableHDR：True=開啟；False=關閉。
 Public Function HDR_SetDisplayByIndex(ByVal DisplayIndex As Long, ByVal EnableHDR As Boolean) As Boolean
-    Dim displays() As HDR_DISPLAY_INFO   ' ©Ň¦łĄŘ«eĹăĄÜľą¸ę°TˇC
+    Dim displays() As HDR_DISPLAY_INFO       ' 目前所有顯示器。
 
     If Not HDR_GetDisplays(displays) Then Exit Function
 
     If Not HDR_ArrayAllocated(displays) Then
-        HDR_SetLastError ERROR_INVALID_PARAMETER, "ĄŘ«e¨S¦łĄiĄÎŞş±ŇĄÎ¤¤ĹăĄÜľąˇC"
+        HDR_SetLastError ERROR_NOT_FOUND, "目前沒有可用的作用中顯示器。"
         Exit Function
     End If
 
     If DisplayIndex < LBound(displays) Or DisplayIndex > UBound(displays) Then
-        HDR_SetLastError ERROR_INVALID_PARAMETER, "«ü©wŞşĹăĄÜľąŻÁ¤ŢµL®ÄˇC"
+        HDR_SetLastError ERROR_INVALID_PARAMETER, "指定的顯示器索引無效。"
         Exit Function
     End If
 
@@ -485,22 +532,24 @@ Public Function HDR_SetDisplayByIndex(ByVal DisplayIndex As Long, ByVal EnableHD
 End Function
 
 '=====================================================================
-' ¨p¦ł¨çĽĆˇG¦wĄţ¨ú±oĄŘ«e active display configurationˇC
-' Ą\ŻŕˇGłB˛z GetDisplayConfigBufferSizes »P QueryDisplayConfig ¤§¶ˇ
-'       ĹăĄÜ˛ŐşA§ďĹÜły¦¨Şş ERROR_INSUFFICIENT_BUFFERˇAłĚ¦h­«¸Ő 3 ¦¸ˇC
+' 私有函數：查詢 Active Display Configuration
 '=====================================================================
+
+' 取得 Path / Mode Buffer 並查詢 active Display Path。
+' Windows 顯示組態可能在兩次 API 呼叫間改變，因此遇到
+' ERROR_INSUFFICIENT_BUFFER 時最多重試三次。
 Private Function HDR_QueryActiveDisplays( _
     ByRef pathBuffer() As Byte, _
     ByRef pathCount As Long, _
     ByRef modeBuffer() As Byte, _
     ByRef modeCount As Long) As Boolean
 
-    Dim attempt As Long                  ' ˛Ä´X¦¸¬d¸ßˇAłĚ¦h 3 ¦¸ˇC
-    Dim result As Long                   ' Win32 API ¦^¶Ç­ČˇC
-    Dim requestedPaths As Long           ' API «ŘÄł°t¸mŞş Path ĽĆ¶qˇC
-    Dim requestedModes As Long           ' API «ŘÄł°t¸mŞş Mode ĽĆ¶qˇC
-    Dim pathBytes As Long                ' Path Buffer ąę»Ú°t¸m¤j¤pˇC
-    Dim modeBytes As Long                ' Mode Buffer ąę»Ú°t¸m¤j¤pˇC
+    Dim attempt As Long               ' 目前第幾次嘗試。
+    Dim result As Long                ' API 回傳值。
+    Dim requestedPaths As Long        ' API 要求的 Path 數量。
+    Dim requestedModes As Long        ' API 要求的 Mode 數量。
+    Dim pathBytes As Long             ' Path Buffer bytes。
+    Dim modeBytes As Long             ' Mode Buffer bytes。
 
     Erase pathBuffer
     Erase modeBuffer
@@ -511,16 +560,20 @@ Private Function HDR_QueryActiveDisplays( _
         requestedPaths = 0
         requestedModes = 0
 
-        result = GetDisplayConfigBufferSizes(QDC_ONLY_ACTIVE_PATHS, requestedPaths, requestedModes)
+        result = GetDisplayConfigBufferSizes( _
+                    QDC_ONLY_ACTIVE_PATHS, _
+                    requestedPaths, _
+                    requestedModes)
+
         If result <> ERROR_SUCCESS Then
-            HDR_SetLastError result, "¨ú±oĹăĄÜ˛ŐşA Buffer ¤j¤pĄ˘±ŃˇC"
+            HDR_SetLastError result, "取得顯示組態 Buffer 大小失敗。"
             Exit Function
         End If
 
         pathCount = requestedPaths
         modeCount = requestedModes
 
-        ' §Y¨Ď API ¦^łř 0ˇA¤]°t¸m¦Ü¤Ö¤@µ§°OľĐĹéˇAÁ×§K VB6 ˛ŁĄÍŞĹ°}¦C°ÝĂDˇC
+        ' VB6 不允許零長度 Byte Array，因此最少配置一個元素。
         If pathCount < 1 Then pathCount = 1
         If modeCount < 1 Then modeCount = 1
 
@@ -530,7 +583,7 @@ Private Function HDR_QueryActiveDisplays( _
         ReDim pathBuffer(0 To pathBytes - 1)
         ReDim modeBuffer(0 To modeBytes - 1)
 
-        ' QDC_ONLY_ACTIVE_PATHS ¤U currentTopologyId Ą˛¶·¶Ç NULLˇF32-bit VB6 ĄH ByVal 0& ¶Ç¤JˇC
+        ' QDC_ONLY_ACTIVE_PATHS 時 currentTopologyId 必須是 NULL。
         result = QueryDisplayConfig( _
                     QDC_ONLY_ACTIVE_PATHS, _
                     pathCount, _
@@ -540,47 +593,48 @@ Private Function HDR_QueryActiveDisplays( _
                     0&)
 
         If result = ERROR_SUCCESS Then
-            If pathCount < 0 Then pathCount = 0
-            If modeCount < 0 Then modeCount = 0
             HDR_ClearLastError
             HDR_QueryActiveDisplays = True
             Exit Function
         End If
 
-        ' ĹăĄÜ˛ŐşAĄiŻŕ¦b¨â­Ó API ¤§¶ˇµoĄÍĹÜ¤ĆˇF­«·s¨ú±o Buffer ¤j¤p«á¦A¬d¤@¦¸ˇC
         If result <> ERROR_INSUFFICIENT_BUFFER Then
-            HDR_SetLastError result, "ĹŞ¨úĄŘ«eĹăĄÜ˛ŐşAĄ˘±ŃˇC"
+            HDR_SetLastError result, "查詢目前顯示組態失敗。"
             Exit Function
         End If
     Next attempt
 
-    HDR_SetLastError ERROR_INSUFFICIENT_BUFFER, "ĹŞ¨úĹăĄÜ˛ŐşAłsÄň 3 ¦¸łŁ¦] Buffer ¤j¤p¤Ł¨¬¦ÓĄ˘±ŃˇC"
+    HDR_SetLastError ERROR_INSUFFICIENT_BUFFER, _
+                     "顯示組態在查詢期間持續變更，連續三次取得 Buffer 都不足。"
 End Function
 
 '=====================================================================
-' ¨p¦ł¨çĽĆˇG«ŘĄßłć¤@ĹăĄÜľą¸ę°TˇC
-' Ą\ŻŕˇG±q DISPLAYCONFIG_PATH_INFO ¨úĄX Adapter LUID / Target IDˇA
-'       ¦A¨ú±oĹăĄÜľą¦WşŮ»P HDR / Advanced Color Ş¬şAˇC
+' 私有函數：建立單一顯示器資訊
 '=====================================================================
+
+' 從 DISPLAYCONFIG_PATH_INFO Byte Array 建立 HDR_DISPLAY_INFO。
+' Index：目前 active path 的陣列索引。
+' pathBuffer：QueryDisplayConfig 回傳的 Path Buffer。
 Private Function HDR_CreateDisplayInfo(ByVal Index As Long, ByRef pathBuffer() As Byte) As HDR_DISPLAY_INFO
-    Dim info As HDR_DISPLAY_INFO            ' §Y±N¦^¶ÇŞşłć¤@ĹăĄÜľą¸ę®ĆˇC
-    Dim offset As Long                     ' ¦ą Path ¦b Buffer ¤¤Şş°_©l offsetˇC
-    Dim pathFlags As Long                  ' DISPLAYCONFIG_PATH_INFO.status ŞşşXĽĐˇC
-    Dim nameError As Long                  ' ĹăĄÜľą¦WşŮ API Şşżů»~˝XˇF¤ŁĽvĹT HDR ®Ö¤ß¬d¸ßˇC
+    Dim info As HDR_DISPLAY_INFO       ' 輸出的顯示器資訊。
+    Dim offset As Long                 ' 此 Path 在 Buffer 中的起始 offset。
+    Dim pathFlags As Long              ' Display Path flags。
+    Dim nameError As Long              ' 顯示器名稱查詢錯誤碼。
 
     info.Index = Index
-    info.ActiveColorMode = DISPLAYCONFIG_ADVANCED_COLOR_MODE_SDR
+    info.ActiveColorMode = -1
     info.LastError = ERROR_SUCCESS
 
     offset = Index * DISPLAYCONFIG_PATH_INFO_SIZE
 
-    ' DISPLAYCONFIG_PATH_INFO.targetInfoˇG
-    ' adapterId.LowPart offset 20ˇBHighPart offset 24ˇBid offset 28ˇC
+    ' DISPLAYCONFIG_PATH_INFO.targetInfo：
+    ' adapterId low  offset 20
+    ' adapterId high offset 24
+    ' targetId       offset 28
+    ' flags          offset 68
     info.AdapterLow = HDR_ReadLong(pathBuffer, offset + 20)
     info.AdapterHigh = HDR_ReadLong(pathBuffer, offset + 24)
     info.TargetId = HDR_ReadLong(pathBuffer, offset + 28)
-
-    ' status ¦ě©ó path µ˛şcłĚ«á 4 bytesˇAoffset 68ˇC
     pathFlags = HDR_ReadLong(pathBuffer, offset + 68)
 
     If (pathFlags And DISPLAYCONFIG_PATH_ACTIVE) = 0 Then
@@ -589,7 +643,7 @@ Private Function HDR_CreateDisplayInfo(ByVal Index As Long, ByRef pathBuffer() A
         Exit Function
     End If
 
-    ' Friendly Name ÄÝ©ó»˛§U¸ę°TˇF¦WşŮ¨ú±oĄ˘±Ń¤ŁŔłŞý¤î HDR Ş¬şA¬d¸ßˇC
+    ' Friendly Name 是輔助資訊，名稱失敗不應阻止 HDR 狀態取得。
     info.Name = HDR_GetDisplayName( _
                     info.AdapterLow, _
                     info.AdapterHigh, _
@@ -612,46 +666,51 @@ Private Function HDR_CreateDisplayInfo(ByVal Index As Long, ByRef pathBuffer() A
 End Function
 
 '=====================================================================
-' ¨p¦ł¨çĽĆˇG¬d¸ß Windows 11 24H2+ HDR Ş¬şAˇC
-' Ą\ŻŕˇG¸ŃŞR GET_ADVANCED_COLOR_INFO_2 Şş bit field »P Active Color ModeˇC
+' 私有函數：讀取 Windows 11 24H2+ HDR 狀態
 '=====================================================================
+
+' 使用 DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO_2 讀取精確 HDR / WCG 狀態。
+' info：要填入的顯示器資訊結構。
 Private Function HDR_ReadDisplayStatus2(ByRef info As HDR_DISPLAY_INFO) As Boolean
-    Dim packet(0 To DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO_2_SIZE - 1) As Byte  ' API ¦^¶Çµ˛şcˇC
-    Dim result As Long                        ' DisplayConfigGetDeviceInfo ¦^¶Ç­ČˇC
-    Dim value As Long                         ' 20 bytes offset Şş bit fieldˇC
-    Dim activeMode As Long                    ' 32 bytes offset Şş Active Color ModeˇC
+    Dim packet(0 To DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO_2_SIZE - 1) As Byte ' API Packet。
+    Dim result As Long                   ' API 回傳碼。
+    Dim value As Long                    ' 4-byte bitfield。
+    Dim activeMode As Long               ' 0=SDR、1=WCG、2=HDR。
 
     HDR_InitHeader packet, _
                    DISPLAYCONFIG_DEVICE_INFO_GET_ADVANCED_COLOR_INFO_2, _
                    DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO_2_SIZE, _
-                   info.AdapterLow, info.AdapterHigh, info.TargetId
+                   info.AdapterLow, _
+                   info.AdapterHigh, _
+                   info.TargetId
 
     result = DisplayConfigGetDeviceInfo(packet(0))
     If result <> ERROR_SUCCESS Then
         info.LastError = result
-        HDR_SetLastError result, "ĹŞ¨ú·sŞ© HDR / Advanced Color Ş¬şAĄ˘±ŃˇC"
+        HDR_SetLastError result, "讀取新版 HDR 狀態失敗。"
         Exit Function
     End If
 
+    ' bitfield 位於 offset 20。
     value = HDR_ReadLong(packet, 20)
+
+    ' Active Color Mode 位於 offset 32。
     activeMode = HDR_ReadLong(packet, 32)
 
     info.AdvancedColorSupported = HDR_TestBit(value, AC2_ADVANCED_COLOR_SUPPORTED)
     info.AdvancedColorActive = HDR_TestBit(value, AC2_ADVANCED_COLOR_ACTIVE)
     info.AdvancedColorLimitedByPolicy = HDR_TestBit(value, AC2_ADVANCED_COLOR_LIMITED_BY_POLICY)
 
-    ' ·sŞ© API ĄiŞ˝±µ§PÂ_ HDR capabilityˇC
     info.HDRSupported = HDR_TestBit(value, AC2_HDR_SUPPORTED)
     info.HDRCapabilityKnown = True
     info.HDRUserEnabled = HDR_TestBit(value, AC2_HDR_USER_ENABLED)
 
-    ' ŻuĄżŞş HDR Active §PÂ_ĄH Active Color Mode ¬°·ÇˇA¦Ó¤Ł¬OĄu¬Ý User EnabledˇC
+    ' 實際 HDR 必須看 Active Color Mode，不只看 User Enabled。
     info.HDRActive = (activeMode = DISPLAYCONFIG_ADVANCED_COLOR_MODE_HDR)
 
     info.WCGSupported = HDR_TestBit(value, AC2_WIDE_COLOR_SUPPORTED)
     info.WCGUserEnabled = HDR_TestBit(value, AC2_WIDE_COLOR_USER_ENABLED)
 
-    ' ·sŞ©µ˛şc¨S¦łĄHÂÂŞ©¬Ű¦P¤č¦ˇ´Ł¨Ń Wide Color Enforced / Force DisabledˇC
     info.AdvancedColorForceDisabled = False
     info.WideColorEnforced = False
 
@@ -668,23 +727,27 @@ Private Function HDR_ReadDisplayStatus2(ByRef info As HDR_DISPLAY_INFO) As Boole
 End Function
 
 '=====================================================================
-' ¨p¦ł¨çĽĆˇG¬d¸ßÂÂŞ© Windows Advanced Color Ş¬şAˇC
-' Ą\ŻŕˇGĄu¶ńĽgÂÂ API ŻŕĄiľa¨ú±oŞşÄć¦ěˇA¤Ł§â Advanced Color «_ĄR HDRˇC
+' 私有函數：讀取舊版 Advanced Color 狀態
 '=====================================================================
+
+' 使用舊版 API 讀取 Advanced Color。
+' 舊版 API 無法可靠區分 WCG 與 HDR，因此 HDR capability 必須標記 Unknown。
 Private Function HDR_ReadDisplayStatusLegacy(ByRef info As HDR_DISPLAY_INFO) As Boolean
-    Dim packet(0 To DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO_SIZE - 1) As Byte  ' ÂÂŞ© API µ˛şcˇC
-    Dim result As Long                        ' API ¦^¶Ç­ČˇC
-    Dim value As Long                         ' ÂÂŞ© bit fieldˇC
+    Dim packet(0 To DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO_SIZE - 1) As Byte ' API Packet。
+    Dim result As Long                   ' API 回傳碼。
+    Dim value As Long                    ' 4-byte bitfield。
 
     HDR_InitHeader packet, _
                    DISPLAYCONFIG_DEVICE_INFO_GET_ADVANCED_COLOR_INFO, _
                    DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO_SIZE, _
-                   info.AdapterLow, info.AdapterHigh, info.TargetId
+                   info.AdapterLow, _
+                   info.AdapterHigh, _
+                   info.TargetId
 
     result = DisplayConfigGetDeviceInfo(packet(0))
     If result <> ERROR_SUCCESS Then
         info.LastError = result
-        HDR_SetLastError result, "ĹŞ¨úÂÂŞ© Advanced Color Ş¬şAĄ˘±ŃˇC"
+        HDR_SetLastError result, "讀取舊版 Advanced Color 狀態失敗。"
         Exit Function
     End If
 
@@ -692,10 +755,10 @@ Private Function HDR_ReadDisplayStatusLegacy(ByRef info As HDR_DISPLAY_INFO) As 
 
     info.AdvancedColorSupported = HDR_TestBit(value, AC1_ADVANCED_COLOR_SUPPORTED)
     info.AdvancedColorActive = HDR_TestBit(value, AC1_ADVANCED_COLOR_ENABLED)
-    info.AdvancedColorForceDisabled = HDR_TestBit(value, AC1_ADVANCED_COLOR_FORCE_DISABLED)
     info.WideColorEnforced = HDR_TestBit(value, AC1_WIDE_COLOR_ENFORCED)
+    info.AdvancedColorForceDisabled = HDR_TestBit(value, AC1_ADVANCED_COLOR_FORCE_DISABLED)
 
-    ' ÂÂ API µLŞkĄiľa°Ď¤Ŕ HDR »P WCGˇA©ŇĄH HDR capability ¨č·NĽĐ°O¬° UnknownˇC
+    ' 舊 API 沒有 highDynamicRangeSupported 欄位。
     info.HDRCapabilityKnown = False
     info.HDRSupported = False
     info.HDRUserEnabled = False
@@ -711,41 +774,42 @@ Private Function HDR_ReadDisplayStatusLegacy(ByRef info As HDR_DISPLAY_INFO) As 
 End Function
 
 '=====================================================================
-' ¨p¦ł¨çĽĆˇGł]©włć¤@ĹăĄÜľąŞş HDR / Advanced ColorˇC
-' Ą\ŻŕˇG24H2+ ÄY®ć¨ĎĄÎ SET_HDR_STATEˇFÂÂŞ©¨ĎĄÎ Advanced ColorˇC
-'       ł]©w¦¨Ą\«á¤@©w­«·s¬d¸ß¨ĂĹçĂŇˇC
+' 私有函數：設定單一顯示器
 '=====================================================================
-Private Function HDR_SetDisplay(ByRef info As HDR_DISPLAY_INFO, ByVal EnableHDR As Boolean) As Boolean
-    Dim packet(0 To DISPLAYCONFIG_SET_HDR_STATE_SIZE - 1) As Byte              ' 24H2+ HDR ł]©wµ˛şcˇC
-    Dim packetLegacy(0 To DISPLAYCONFIG_SET_ADVANCED_COLOR_STATE_SIZE - 1) As Byte ' ÂÂŞ©ł]©wµ˛şcˇC
-    Dim result As Long                       ' Set API ¦^¶Ç­ČˇC
-    Dim expected As Boolean                  ' ĹçĂŇ®Éąw´ÁŞşłĚ˛×Ş¬şAˇC
 
-    expected = EnableHDR
+' 依 Windows 版本使用正確的 Set API，並在 Set 後重新 Query 驗證。
+' info：要設定的顯示器。
+' EnableHDR：True=開啟；False=關閉。
+Private Function HDR_SetDisplay(ByRef info As HDR_DISPLAY_INFO, ByVal EnableHDR As Boolean) As Boolean
+    Dim packet(0 To DISPLAYCONFIG_SET_HDR_STATE_SIZE - 1) As Byte ' 新版 HDR Packet。
+    Dim packetLegacy(0 To DISPLAYCONFIG_SET_ADVANCED_COLOR_STATE_SIZE - 1) As Byte ' 舊版 Packet。
+    Dim result As Long                       ' API 回傳值。
 
     If HDR_IsWindows11_24H2() Then
-        ' ·sŞ©¸ô®|Ąu¤ął\ŻuĄżŞş HDR capabilityˇC
+        ' 新版 API 不得 fallback 到舊版 Advanced Color API。
         If Not info.HDRCapabilityKnown Then
-            HDR_SetLastError ERROR_NOT_SUPPORTED, "µLŞk¨ú±o¦ąĹăĄÜľąŞş HDR Żŕ¤O¸ę°TˇC"
+            HDR_SetLastError ERROR_NOT_SUPPORTED, "無法取得此顯示器的 HDR 能力。"
             Exit Function
         End If
 
         If EnableHDR And Not info.HDRSupported Then
-            HDR_SetLastError ERROR_NOT_SUPPORTED, "¦ąĹăĄÜľą¤Ł¤ä´© HDRˇC"
+            HDR_SetLastError ERROR_NOT_SUPPORTED, "此顯示器不支援 HDR。"
             Exit Function
         End If
 
         If Not EnableHDR And Not info.HDRSupported Then
-            ' Ą»¨Ó´N¤Ł¤ä´© HDRˇAĂöł¬ HDR ¤w˛Ĺ¦XłĚ˛×Ş¬şAˇC
-            HDR_SetDisplay = True
+            ' 不支援 HDR 的顯示器本身就不會處於 HDR。
             HDR_ClearLastError
+            HDR_SetDisplay = True
             Exit Function
         End If
 
         HDR_InitHeader packet, _
                        DISPLAYCONFIG_DEVICE_INFO_SET_HDR_STATE, _
                        DISPLAYCONFIG_SET_HDR_STATE_SIZE, _
-                       info.AdapterLow, info.AdapterHigh, info.TargetId
+                       info.AdapterLow, _
+                       info.AdapterHigh, _
+                       info.TargetId
 
         If EnableHDR Then
             HDR_WriteLong packet, 20, 1
@@ -756,21 +820,17 @@ Private Function HDR_SetDisplay(ByRef info As HDR_DISPLAY_INFO, ByVal EnableHDR 
         result = DisplayConfigSetDeviceInfo(packet(0))
         If result <> ERROR_SUCCESS Then
             info.LastError = result
-            HDR_SetLastError result, "ł]©w·sŞ© HDR Ş¬şAĄ˘±ŃˇC"
+            HDR_SetLastError result, "設定新版 HDR 狀態失敗。"
             Exit Function
         End If
     Else
-        ' ÂÂŞ© API Şş»y·N¬O Advanced ColorˇA¤ŁĄiµř¬°şë˝T HDR ¶}ĂöˇC
-        If Not EnableHDR And Not info.AdvancedColorActive Then
-            HDR_SetDisplay = True
-            HDR_ClearLastError
-            Exit Function
-        End If
-
+        ' 舊版 API 實際控制的是 Advanced Color，相容名稱保留 HDR_Enable/HDR_Disable。
         HDR_InitHeader packetLegacy, _
                        DISPLAYCONFIG_DEVICE_INFO_SET_ADVANCED_COLOR_STATE, _
                        DISPLAYCONFIG_SET_ADVANCED_COLOR_STATE_SIZE, _
-                       info.AdapterLow, info.AdapterHigh, info.TargetId
+                       info.AdapterLow, _
+                       info.AdapterHigh, _
+                       info.TargetId
 
         If EnableHDR Then
             HDR_WriteLong packetLegacy, 20, 1
@@ -781,32 +841,34 @@ Private Function HDR_SetDisplay(ByRef info As HDR_DISPLAY_INFO, ByVal EnableHDR 
         result = DisplayConfigSetDeviceInfo(packetLegacy(0))
         If result <> ERROR_SUCCESS Then
             info.LastError = result
-            HDR_SetLastError result, "ł]©wÂÂŞ© Advanced Color Ş¬şAĄ˘±ŃˇC"
+            HDR_SetLastError result, "設定舊版 Advanced Color 狀態失敗。"
             Exit Function
         End If
     End If
 
-    ' Set ¦¨Ą\¤ŁĄNŞíąę»ÚŞ¬şA¤@©w¤w¸g¤Á´«ˇAĄ˛¶·­«·s Query ĹçĂŇˇC
-    If HDR_VerifyDisplay(info, expected) Then
-        HDR_SetDisplay = True
+    ' Set API 成功不代表實際狀態已完成，必須重新查詢驗證。
+    If HDR_VerifyDisplay(info, EnableHDR) Then
         HDR_ClearLastError
+        HDR_SetDisplay = True
     End If
 End Function
 
 '=====================================================================
-' ¨p¦ł¨çĽĆˇGł]©w©Ň¦łĄŘ«e±ŇĄÎĹăĄÜľąˇC
-' Ą\ŻŕˇGłv¤@łB˛z¦hżĂąőˇA°Ożý˛Ä¤@­Óżů»~¨Ă«OŻd¨äĄLĹăĄÜľąŞş°ő¦ćµ˛ŞGˇC
+' 私有函數：設定所有顯示器
 '=====================================================================
+
+' 對所有 active 顯示器設定相同目標狀態。
+' EnableHDR：True=開啟；False=關閉。
 Private Function HDR_SetAllDisplays(ByVal EnableHDR As Boolean) As Boolean
-    Dim displays() As HDR_DISPLAY_INFO   ' ©Ň¦łĄŘ«e±ŇĄÎŞşĹăĄÜľąˇC
-    Dim i As Long                        ' ĹăĄÜľą°}¦CŻÁ¤ŢˇC
-    Dim okAll As Boolean                 ' ¬O§_©Ň¦łĹăĄÜľąłŁ¦¨Ą\ˇC
-    Dim firstError As Long               ' ˛Ä¤@­Óżů»~˝XˇC
+    Dim displays() As HDR_DISPLAY_INFO       ' 所有 active 顯示器。
+    Dim i As Long                            ' 顯示器索引。
+    Dim okAll As Boolean                     ' 是否全部成功。
+    Dim firstError As Long                   ' 第一個錯誤碼。
 
     If Not HDR_GetDisplays(displays) Then Exit Function
 
     If Not HDR_ArrayAllocated(displays) Then
-        HDR_SetLastError ERROR_INVALID_PARAMETER, "ĄŘ«e¨S¦łĄiĄÎŞş±ŇĄÎ¤¤ĹăĄÜľąˇC"
+        HDR_SetLastError ERROR_NOT_FOUND, "目前沒有可用的作用中顯示器。"
         Exit Function
     End If
 
@@ -817,7 +879,6 @@ Private Function HDR_SetAllDisplays(ByVal EnableHDR As Boolean) As Boolean
         If HDR_IsWindows11_24H2() Then
             If EnableHDR And Not displays(i).HDRSupported Then
                 okAll = False
-                displays(i).LastError = ERROR_NOT_SUPPORTED
                 If firstError = ERROR_SUCCESS Then firstError = ERROR_NOT_SUPPORTED
             ElseIf Not HDR_SetDisplay(displays(i), EnableHDR) Then
                 okAll = False
@@ -835,23 +896,26 @@ Private Function HDR_SetAllDisplays(ByVal EnableHDR As Boolean) As Boolean
         HDR_ClearLastError
     Else
         If firstError = ERROR_SUCCESS Then firstError = ERROR_GEN_FAILURE
-        HDR_SetLastError firstError, "łˇ¤Ŕ©ÎĄţłˇĹăĄÜľął]©wĄ˘±ŃˇC"
+        HDR_SetLastError firstError, "部分或全部顯示器設定失敗。"
     End If
 
     HDR_SetAllDisplays = okAll
 End Function
 
 '=====================================================================
-' ¨p¦ł¨çĽĆˇGĹçĂŇłć¤@ĹăĄÜľąŞşłĚ˛×Ş¬şAˇC
-' Ą\ŻŕˇG­«·s QueryˇA¨ĂĄH Adapter LUID + Target ID §ä¦^¦P¤@ĹăĄÜľąˇC
-'       łĚ¦h­«¸Ő 3 ¦¸ˇAÁ×§K Windows ©|¦b®MĄÎŞ¬şA®É»~§PˇC
+' 私有函數：設定後驗證
 '=====================================================================
+
+' 重新列舉 Display Configuration，找到原 Adapter LUID + Target ID，
+' 並確認設定後的實際狀態。
+' OriginalInfo：原始顯示器資訊，成功後更新為最新資訊。
+' ExpectedHDR：新版 API 預期的 HDR Active；舊版則代表 Advanced Color Active。
 Private Function HDR_VerifyDisplay(ByRef OriginalInfo As HDR_DISPLAY_INFO, ByVal ExpectedHDR As Boolean) As Boolean
-    Dim displays() As HDR_DISPLAY_INFO   ' ­«·s¬d¸ß«áŞşĹăĄÜľąŞ¬şAˇC
-    Dim retry As Long                    ' ĹçĂŇ­«¸Ő¦¸ĽĆˇAłĚ¦h 3 ¦¸ˇC
-    Dim i As Long                        ' ĹăĄÜľą°}¦CŻÁ¤ŢˇC
-    Dim found As Boolean                 ' ¬O§_§ä¨ě­ěĄ»Şş TargetˇC
-    Dim current As HDR_DISPLAY_INFO      ' §ä¨ěŞşłĚ·sĹăĄÜľąŞ¬şAˇC
+    Dim displays() As HDR_DISPLAY_INFO       ' 重新查詢後的顯示器清單。
+    Dim retry As Long                        ' 驗證重試次數。
+    Dim i As Long                            ' 清單索引。
+    Dim found As Boolean                     ' 是否找到相同 Target。
+    Dim current As HDR_DISPLAY_INFO          ' 最新顯示器資訊。
 
     For retry = 1 To 3
         If HDR_GetDisplays(displays) Then
@@ -862,6 +926,7 @@ Private Function HDR_VerifyDisplay(ByRef OriginalInfo As HDR_DISPLAY_INFO, ByVal
                     If displays(i).AdapterLow = OriginalInfo.AdapterLow And _
                        displays(i).AdapterHigh = OriginalInfo.AdapterHigh And _
                        displays(i).TargetId = OriginalInfo.TargetId Then
+
                         current = displays(i)
                         found = True
                         Exit For
@@ -873,24 +938,26 @@ Private Function HDR_VerifyDisplay(ByRef OriginalInfo As HDR_DISPLAY_INFO, ByVal
                 OriginalInfo = current
 
                 If HDR_IsWindows11_24H2() Then
-                    If ExpectedHDR And current.HDRActive Then
-                        HDR_VerifyDisplay = True
-                        Exit Function
-                    End If
-
-                    If Not ExpectedHDR And Not current.HDRActive Then
-                        HDR_VerifyDisplay = True
-                        Exit Function
+                    If ExpectedHDR Then
+                        If current.HDRActive Then
+                            HDR_VerifyDisplay = True
+                            Exit Function
+                        End If
+                    Else
+                        If Not current.HDRActive Then
+                            HDR_VerifyDisplay = True
+                            Exit Function
+                        End If
                     End If
                 Else
-                    ' ÂÂŞ©ĹçĂŇŞş¬O Advanced ColorˇA¦Ó¤Ł¬Oşë˝T HDRˇC
+                    ' 舊版驗證的是 Advanced Color Active。
                     If current.AdvancedColorActive = ExpectedHDR Then
                         HDR_VerifyDisplay = True
                         Exit Function
                     End If
                 End If
             Else
-                HDR_SetLastError ERROR_NOT_FOUND, "ł]©w«á§ä¤Ł¨ě­ěĄ»ŞşĹăĄÜľą TargetˇC"
+                HDR_SetLastError ERROR_NOT_FOUND, "設定後找不到原本的顯示器 Target。"
             End If
         End If
 
@@ -898,17 +965,18 @@ Private Function HDR_VerifyDisplay(ByRef OriginalInfo As HDR_DISPLAY_INFO, ByVal
     Next retry
 
     If HDR_IsWindows11_24H2() Then
-        HDR_SetLastError ERROR_GEN_FAILURE, "ł]©w«á­«·s¬d¸ßˇAHDR ąę»ÚŞ¬şAĄĽ˛Ĺ¦Xąw´ÁˇC"
+        HDR_SetLastError ERROR_GEN_FAILURE, "設定完成，但重新查詢後 HDR 實際狀態未符合預期。"
     Else
-        HDR_SetLastError ERROR_GEN_FAILURE, "ł]©w«á­«·s¬d¸ßˇAAdvanced Color ąę»ÚŞ¬şAĄĽ˛Ĺ¦Xąw´ÁˇC"
+        HDR_SetLastError ERROR_GEN_FAILURE, "設定完成，但重新查詢後 Advanced Color 實際狀態未符合預期。"
     End If
 End Function
 
 '=====================================================================
-' ¨p¦ł¨çĽĆˇG¨ú±oĹăĄÜľą¤Íµ˝¦WşŮˇC
-' Ą\ŻŕˇG¨ĎĄÎ DISPLAYCONFIG_TARGET_DEVICE_NAME ¨ú±o Friendly NameˇA
-'       ¦P®É¦^¶Ç¦WşŮ¨Ó·˝şXĽĐˇC
+' 私有函數：取得顯示器名稱
 '=====================================================================
+
+' 使用 DISPLAYCONFIG_TARGET_DEVICE_NAME 取得 Friendly Name 與來源旗標。
+' ErrorCode：回傳取得名稱時的 API 錯誤碼。
 Private Function HDR_GetDisplayName( _
     ByVal adapterLow As Long, _
     ByVal adapterHigh As Long, _
@@ -917,10 +985,10 @@ Private Function HDR_GetDisplayName( _
     ByRef FriendlyNameForced As Boolean, _
     ByRef ErrorCode As Long) As String
 
-    Dim packet(0 To DISPLAYCONFIG_TARGET_DEVICE_NAME_SIZE - 1) As Byte ' ¦WşŮ API Şş 420-byte µ˛şcˇC
-    Dim result As Long                       ' API ¦^¶Ç­ČˇC
-    Dim flags As Long                        ' Friendly Name ¨Ó·˝şXĽĐˇC
-    Dim nameText As String                   ' łĚ˛×ĹăĄÜľą¦WşŮˇC
+    Dim packet(0 To DISPLAYCONFIG_TARGET_DEVICE_NAME_SIZE - 1) As Byte ' 420-byte Packet。
+    Dim result As Long                       ' API 回傳值。
+    Dim flags As Long                        ' Friendly Name flags。
+    Dim nameText As String                   ' 顯示器名稱。
 
     FriendlyNameFromEdid = False
     FriendlyNameForced = False
@@ -929,35 +997,47 @@ Private Function HDR_GetDisplayName( _
     HDR_InitHeader packet, _
                    DISPLAYCONFIG_DEVICE_INFO_GET_TARGET_NAME, _
                    DISPLAYCONFIG_TARGET_DEVICE_NAME_SIZE, _
-                   adapterLow, adapterHigh, targetId
+                   adapterLow, _
+                   adapterHigh, _
+                   targetId
 
     result = DisplayConfigGetDeviceInfo(packet(0))
     If result <> ERROR_SUCCESS Then
         ErrorCode = result
-        HDR_GetDisplayName = "˛Ä " & CStr(targetId) & " ­ÓĹăĄÜĄŘĽĐ"
+        HDR_GetDisplayName = "顯示器 " & CStr(targetId)
         Exit Function
     End If
 
+    ' flags 位於 offset 20。
     flags = HDR_ReadLong(packet, 20)
 
-    ' DISPLAYCONFIG_TARGET_DEVICE_NAME_FLAGSˇGbit 0=EDIDˇBbit 1=±j¨î«ü©wˇC
+    ' bit 0：Friendly Name 由 EDID 組成。
     FriendlyNameFromEdid = HDR_TestBit(flags, 0)
+
+    ' bit 1：Forced Target。
     FriendlyNameForced = HDR_TestBit(flags, 1)
 
-    ' 20-byte Header + 16-byte«e¸mÄć¦ě«áˇAFriendly Name ±q offset 36 ¶}©lˇC
+    ' Header 20 + flags 4 + outputTechnology 4 + manufacture 2
+    ' + product 2 + connectorInstance 4 = offset 36。
     nameText = HDR_ReadUnicodeString(packet, 36, 64)
 
     If Len(nameText) = 0 Then
-        nameText = "˛Ä " & CStr(targetId) & " ­ÓĹăĄÜĄŘĽĐ"
+        nameText = "顯示器 " & CStr(targetId)
     End If
 
     HDR_GetDisplayName = nameText
 End Function
 
 '=====================================================================
-' ¨p¦ł¨çĽĆˇGŞě©l¤Ć DISPLAYCONFIG_DEVICE_INFO_HEADERˇC
-' Ą\ŻŕˇG©Ň¦ł Get / Set Device Info µ˛şc¦@ĄÎ¦P¤@­Ó Header «e 20 bytesˇC
+' 私有函數：初始化 DISPLAYCONFIG_DEVICE_INFO_HEADER
 '=====================================================================
+
+' 將 Windows Device Info Header 寫入 Byte Array。
+' packet：輸出的 API Packet。
+' infoType：DISPLAYCONFIG_DEVICE_INFO_TYPE。
+' packetSize：完整 Packet 大小。
+' adapterLow / adapterHigh：Adapter LUID。
+' targetId：Display Target ID。
 Private Sub HDR_InitHeader( _
     ByRef packet() As Byte, _
     ByVal infoType As Long, _
@@ -966,35 +1046,164 @@ Private Sub HDR_InitHeader( _
     ByVal adapterHigh As Long, _
     ByVal targetId As Long)
 
-    HDR_WriteLong packet, 0, infoType         ' typeˇG¸ę®Ć­n¨DĂţ«¬ˇC
-    HDR_WriteLong packet, 4, packetSize      ' sizeˇGľă­Ó«ĘĄ]¤j¤pˇC
-    HDR_WriteLong packet, 8, adapterLow      ' adapterId.LowPartˇC
-    HDR_WriteLong packet, 12, adapterHigh    ' adapterId.HighPartˇC
-    HDR_WriteLong packet, 16, targetId       ' targetIdˇC
+    HDR_WriteLong packet, 0, infoType
+    HDR_WriteLong packet, 4, packetSize
+    HDR_WriteLong packet, 8, adapterLow
+    HDR_WriteLong packet, 12, adapterHigh
+    HDR_WriteLong packet, 16, targetId
 End Sub
 
 '=====================================================================
-' ¨p¦ł¨çĽĆˇG±q Byte Array «ü©w offset ĹŞ¨ú 32-bit LongˇC
-' Ą\ŻŕˇG¶°¤¤łB˛z Windows API ­ě©lµ˛şcŞş¦ě¤¸˛ŐĹŞ¨úˇC
-' ­«­n°ŃĽĆˇGOffset ¬Oµ˛şc¤ş¦ě˛ľ¶qˇAbuffer ¬O API ­ě©l¸ę®ĆˇC
+' 私有函數：從 Byte Array 讀取 32-bit Long
 '=====================================================================
+
+' 以原始記憶體方式讀取 Windows API 的 32-bit UINT32。
 Private Function HDR_ReadLong(ByRef buffer() As Byte, ByVal Offset As Long) As Long
-    Dim value As Long                        ' ±q«ü©w offset ˝Ć»sĄXŞş 32-bit ľăĽĆˇC
+    Dim value As Long                 ' 暫存 32-bit 整數。
 
     CopyMemory value, buffer(Offset), 4
     HDR_ReadLong = value
 End Function
 
 '=====================================================================
-' ¨p¦ł¨çĽĆˇG±N 32-bit Long Ľg¤J Byte ArrayˇC
+' 私有函數：寫入 32-bit Long
 '=====================================================================
+
+' 以原始記憶體方式將 32-bit Long 寫入 Windows API Packet。
 Private Sub HDR_WriteLong(ByRef buffer() As Byte, ByVal Offset As Long, ByVal value As Long)
     CopyMemory buffer(Offset), value, 4
 End Sub
 
 '=====================================================================
-' ¨p¦ł¨çĽĆˇG´ú¸Ő 32-bit ¦ě¤¸Äć¦ě¤¤Şş«ü©w bitˇC
+' 私有函數：讀取 16-bit Unicode Code Unit
 '=====================================================================
+
+' 讀取 Little-Endian WCHAR 的 16-bit code unit。
+Private Function HDR_ReadUInt16(ByRef buffer() As Byte, ByVal Offset As Long) As Long
+    HDR_ReadUInt16 = CLng(buffer(Offset)) + (CLng(buffer(Offset + 1)) * 256)
+End Function
+
+'=====================================================================
+' 私有函數：讀取 Unicode 字串
+'=====================================================================
+
+' 從 Byte Array 讀取固定長度的 UTF-16LE WCHAR 陣列。
+' CharacterCount：最大 WCHAR 數量。
+Private Function HDR_ReadUnicodeString( _
+    ByRef buffer() As Byte, _
+    ByVal Offset As Long, _
+    ByVal CharacterCount As Long) As String
+
+    Dim i As Long                    ' WCHAR 索引。
+    Dim codeUnit As Long             ' 目前 WCHAR。
+    Dim resultText As String         ' 組成的中文字串。
+
+    For i = 0 To CharacterCount - 1
+        codeUnit = HDR_ReadUInt16(buffer, Offset + (i * 2))
+
+        If codeUnit = 0 Then Exit For
+
+        resultText = resultText & ChrW$(codeUnit)
+    Next i
+
+    HDR_ReadUnicodeString = resultText
+End Function
+
+'=====================================================================
+' 私有函數：測試 bitfield
+'=====================================================================
+
+' 測試 32-bit Long 指定 bit 是否為 1。
 Private Function HDR_TestBit(ByVal value As Long, ByVal bitIndex As Long) As Boolean
     Select Case bitIndex
-        Case 0: HDR_TestBit = ((value And 1) <> 0)
+        Case 0
+            HDR_TestBit = ((value And 1) <> 0)
+        Case 1
+            HDR_TestBit = ((value And 2) <> 0)
+        Case 2
+            HDR_TestBit = ((value And 4) <> 0)
+        Case 3
+            HDR_TestBit = ((value And 8) <> 0)
+        Case 4
+            HDR_TestBit = ((value And 16) <> 0)
+        Case 5
+            HDR_TestBit = ((value And 32) <> 0)
+        Case 6
+            HDR_TestBit = ((value And 64) <> 0)
+        Case 7
+            HDR_TestBit = ((value And 128) <> 0)
+        Case Else
+            HDR_TestBit = False
+    End Select
+End Function
+
+'=====================================================================
+' 私有函數：清除錯誤
+'=====================================================================
+
+' 清除模組層級最後錯誤狀態。
+Private Sub HDR_ClearLastError()
+    mLastError = ERROR_SUCCESS
+    mLastErrorText = vbNullString
+End Sub
+
+'=====================================================================
+' 私有函數：設定錯誤
+'=====================================================================
+
+' 設定模組層級錯誤碼與繁體中文錯誤內容。
+' ContextText：目前操作的中文上下文。
+Private Sub HDR_SetLastError(ByVal ErrorCode As Long, ByVal ContextText As String)
+    mLastError = ErrorCode
+
+    If ErrorCode = ERROR_SUCCESS Then
+        mLastErrorText = vbNullString
+    ElseIf Len(ContextText) > 0 Then
+        mLastErrorText = ContextText & "錯誤碼：" & CStr(ErrorCode) & "；" & HDR_ErrorTextChinese(ErrorCode)
+    Else
+        mLastErrorText = HDR_ErrorTextChinese(ErrorCode)
+    End If
+End Sub
+
+'=====================================================================
+' 私有函數：Win32 錯誤碼繁體中文化
+'=====================================================================
+
+' 將常用 Windows 錯誤碼轉成固定繁體中文，避免輸出英文系統訊息。
+Private Function HDR_ErrorTextChinese(ByVal ErrorCode As Long) As String
+    Select Case ErrorCode
+        Case ERROR_SUCCESS
+            HDR_ErrorTextChinese = "成功。"
+        Case ERROR_INVALID_FUNCTION
+            HDR_ErrorTextChinese = "要求的功能無法使用。"
+        Case ERROR_ACCESS_DENIED
+            HDR_ErrorTextChinese = "存取被拒絕。"
+        Case ERROR_INVALID_PARAMETER
+            HDR_ErrorTextChinese = "參數無效。"
+        Case ERROR_INSUFFICIENT_BUFFER
+            HDR_ErrorTextChinese = "提供的 Buffer 大小不足。"
+        Case ERROR_NOT_SUPPORTED
+            HDR_ErrorTextChinese = "目前系統或顯示器不支援此操作。"
+        Case ERROR_NOT_FOUND
+            HDR_ErrorTextChinese = "找不到指定的顯示器或 Target。"
+        Case ERROR_GEN_FAILURE
+            HDR_ErrorTextChinese = "一般性 Windows API 操作失敗。"
+        Case Else
+            HDR_ErrorTextChinese = "Windows API 發生未分類錯誤。"
+    End Select
+End Function
+
+'=====================================================================
+' 私有函數：判斷 UDT 動態陣列是否已配置
+'=====================================================================
+
+' 安全判斷 HDR_DISPLAY_INFO 動態陣列是否已配置。
+Private Function HDR_ArrayAllocated(ByRef Value() As HDR_DISPLAY_INFO) As Boolean
+    On Error GoTo NotAllocated
+
+    HDR_ArrayAllocated = (UBound(Value) >= LBound(Value))
+    Exit Function
+
+NotAllocated:
+    HDR_ArrayAllocated = False
+End Function
