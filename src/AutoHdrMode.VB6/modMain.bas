@@ -78,6 +78,7 @@ Private Function ProbeRun() As Long
     Dim n As Long, sb As Long
     n = WmiPhysicalCount()
     sb = WmiStandbyCount()
+    LogMsg AppVersionLine() ' CLI 先印版本： freshness marker
     LogMsg S_LogProbe(n, sb) ' 探測結果寫檔，結束碼看數字
     If n > 0 Then
         ProbeRun = 0
@@ -101,6 +102,7 @@ Private Function FireCli(ByVal wantOn As Boolean) As Long
     Dim rc As Long
 
     If wantOn Then cfg = g_PowerOn Else cfg = g_PowerOff
+    LogMsg AppVersionLine() ' CLI 先印版本： freshness marker
 
     ' DelayHDR
     If cfg.DelayHDR > 0 Then
@@ -172,13 +174,17 @@ Private Function FireCli(ByVal wantOn As Boolean) As Long
         LogMsg S_LogNativeSkip()
     End If
 
+    If cfg.DelayShell > 0 Then
+        LogMsg S_LogWaitShell(cfg.DelayShell)
+        Call WaitSeconds(cfg.DelayShell)
+    End If
     If Len(Trim$(cfg.Shell)) = 0 Then
         LogMsg S_LogShellSkipEmpty()
     ElseIf Not ShellTargetExists(cfg.Shell) Then
         LogMsg S_LogShellSkipMissing(cfg.Shell)
     Else
-        rc = ShellRunHidden(cfg.Shell, g_WorkDir) ' 工作目錄跑，結束碼記檔
-        LogMsg S_LogShellRun(rc)
+        rc = ShellRunHidden(cfg.Shell, g_WorkDir, cfg.ShellTimeout) ' 工作目錄跑，結束碼記檔
+        If cfg.ShellTimeout <= 0 Then LogMsg S_LogShellLaunch() Else LogMsg S_LogShellRun(rc) ' 0 秒放生記啟動，否則記結束碼
     End If
 
     LogMsg S_LogPhaseDone(wantOn) ' 整鏈完成記一筆
@@ -206,13 +212,17 @@ Public Sub FireTransitionCore(ByVal wantOn As Boolean, Optional ByVal fromCli As
         st = HDR_GetStatus(0) ' 讀 0 號螢幕當代表
         LogMsg S_LogNativeResult(ok, st)
     End If
+    If cfg.DelayShell > 0 Then
+        LogMsg S_LogWaitShell(cfg.DelayShell)
+        Call WaitSeconds(cfg.DelayShell)
+    End If
     If Len(Trim$(cfg.Shell)) = 0 Then
         LogMsg S_LogShellSkipEmpty()
     ElseIf Not ShellTargetExists(cfg.Shell) Then
         LogMsg S_LogShellSkipMissing(cfg.Shell)
     Else
-        rc = ShellRunHidden(cfg.Shell, g_WorkDir) ' 工作目錄跑，結束碼記檔
-        LogMsg S_LogShellRun(rc)
+        rc = ShellRunHidden(cfg.Shell, g_WorkDir, cfg.ShellTimeout) ' 工作目錄跑，結束碼記檔
+        If cfg.ShellTimeout <= 0 Then LogMsg S_LogShellLaunch() Else LogMsg S_LogShellRun(rc) ' 0 秒放生記啟動，否則記結束碼
     End If
     Exit Sub
 Fail:
@@ -285,3 +295,14 @@ End Function
 Public Function AppVersionLine() As String
     AppVersionLine = "AutoHdrMode " & AppVersionText() & " (" & AppBuildText() & ")"
 End Function
+
+' 用途：blocking 等 N 秒（CLI 與快打鏈 Shell 前等待用）；每秒 DoEvents 保活
+Private Sub WaitSeconds(ByVal secs As Long)
+    Dim i As Long, t0 As Single
+    For i = 1 To secs
+        t0 = Timer
+        Do While Timer < t0 + 1
+            DoEvents
+        Loop
+    Next
+End Sub

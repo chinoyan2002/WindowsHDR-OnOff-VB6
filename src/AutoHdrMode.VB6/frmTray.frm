@@ -153,6 +153,7 @@ Private Const PH_IDLE As Integer = 0 ' 閒置：無排程
 Private Const PH_WAIT_HDR As Integer = 1 ' 等 DelayHDR 做 HDR
 Private Const PH_WAIT_VERIFY As Integer = 2 ' 等 VerifySeconds 查狀態
 Private Const PH_WAIT_AFTER_CLEAN As Integer = 3 ' 等 DelayAfterClean 重做 HDR
+Private Const PH_WAIT_SHELL As Integer = 4 ' Shell 執行前等待中
 
 Private m_lastSeen As Integer ' 上次穩定狀態（-1=未知）
 Private m_candidate As Integer ' 候選狀態（去抖中）
@@ -167,12 +168,12 @@ Private m_holdLogged As Boolean ' HOLD 已記過，防每輪洗版
 
 ' 用途：托盤窗啟動：建圖示、套選單文字、啟動輪詢並做第一次偵測
 Private Sub Form_Load()
-    Me.ScaleMode = vbPixels ' 像素座標：托盤滑鼠訊息直接讀 X
-    Me.Move -32000, -32000 ' 藏到螢幕外：要 hwnd 不要畫面
+    Me.ScaleMode = vbPixels                                                     ' 像素座標：托盤滑鼠訊息直接讀 X
+    Me.Move -32000, -32000                                                      ' 藏到螢幕外：要 hwnd 不要畫面
     Me.Show
     Me.Refresh
     
-    mnuTray.Visible = False ' 根選單只當容器，不顯示
+    mnuTray.Visible = False                                                     ' 根選單只當容器，不顯示
     mnuAuto.Caption = S_MenuAuto()
     mnuBalloon.Caption = S_MenuBalloon()
     mnuFireOff.Caption = S_MenuFireOff()
@@ -185,12 +186,12 @@ Private Sub Form_Load()
     mnuExit.Caption = S_MenuExit()
     mnuAuto.Checked = g_AutoOn
     mnuBalloon.Checked = g_Balloon
-    tmrPoll.Interval = g_PollSec * 1000 ' 秒轉毫秒
-    tmrWait.Enabled = False ' 排程節拍關閉
-    m_lastSeen = -1 ' 未知初值：首輪只記錄不動作
+    tmrPoll.Interval = g_PollSec * 1000                                         ' 秒轉毫秒
+    tmrWait.Enabled = False                                                     ' 排程節拍關閉
+    m_lastSeen = -1                                                             ' 未知初值：首輪只記錄不動作
     m_candidate = -1
     m_stable = 0
-    m_pending = -1 ' 無排程
+    m_pending = -1                                                              ' 無排程
     m_phase = PH_IDLE
     m_lastErr = ""
     LogMsg S_LogStart(g_PollSec, g_StableN, g_AutoOn)
@@ -299,6 +300,8 @@ Private Sub tmrWait_Timer()
             Call DoVerifyStep(wantOn)
         Case PH_WAIT_AFTER_CLEAN
             Call DoRetryHdrAfterClean(wantOn)
+        Case PH_WAIT_SHELL
+            Call DoShellStep(wantOn) ' Shell 前等待到期：跑 Shell
     End Select
 End Sub
 
@@ -412,13 +415,19 @@ Private Sub DoShellStep(ByVal wantOn As Boolean)
     On Error GoTo Fail
     Dim cfg As TransCfg, rc As Long
     If wantOn Then cfg = g_PowerOn Else cfg = g_PowerOff
+    If cfg.DelayShell > 0 And m_phase <> PH_WAIT_SHELL Then
+        LogMsg S_LogWaitShell(cfg.DelayShell)
+        m_pendingDue = GetTickCount() + cfg.DelayShell * 1000 ' 碼表重按：Shell 執行前等待
+        m_phase = PH_WAIT_SHELL
+        Exit Sub
+    End If
     If Len(Trim$(cfg.Shell)) = 0 Then ' Shell 空白：跳過不算錯
         LogMsg S_LogShellSkipEmpty()
     ElseIf Not ShellTargetExists(cfg.Shell) Then
         LogMsg S_LogShellSkipMissing(cfg.Shell)
     Else
-        rc = ShellRunHidden(cfg.Shell, g_WorkDir) ' 工作目錄跑，結束碼記檔
-        LogMsg S_LogShellRun(rc)
+        rc = ShellRunHidden(cfg.Shell, g_WorkDir, cfg.ShellTimeout) ' 工作目錄跑，結束碼記檔
+        If cfg.ShellTimeout <= 0 Then LogMsg S_LogShellLaunch() Else LogMsg S_LogShellRun(rc) ' 0 秒放生記啟動，否則記結束碼
     End If
     Call TrayBalloon(S_TipState(wantOn), S_LogPhaseDone(wantOn))
     LogMsg S_LogPhaseDone(wantOn)
@@ -436,7 +445,7 @@ Private Sub FinishPhase()
     tmrWait.Enabled = False ' 排程節拍關閉
 End Sub
 
-' 用途：runas 提權起自己 --clean，最多等 120 秒；回傳：子行程結束碼
+' 用途：runas 提權起自己 --clean，只等 3 秒；逾時放生記 -1，提權使用者自理
 Private Function RunCleanElevated() As Long
     On Error GoTo Fail
     Dim sei As SHELLEXECUTEINFO
@@ -467,7 +476,7 @@ Private Function RunCleanElevated() As Long
         If wr = WAIT_OBJECT_0 Then Exit Do
         DoEvents
         waited = waited + 500
-    Loop While waited < 120000 ' 上限 120 秒，防卡死
+    Loop While waited < 3000 ' 上限 3 秒：不等做完，UAC 失敗記一筆就好
     If wr = WAIT_OBJECT_0 Then GetExitCodeProcess sei.hProcess, rc Else rc = -1 ' 正常取碼，逾時記 -1
     CloseHandle sei.hProcess
     RunCleanElevated = rc
@@ -656,8 +665,8 @@ Private Sub TrayBalloon(ByVal tipTitle As String, ByVal tipText As String)
     On Error Resume Next
     With m_nid
         .uFlags = NIF_ICON Or NIF_TIP Or NIF_MESSAGE Or NIF_INFO
-        .szInfoTitle = Left$(tipTitle & String$(63, vbNullChar), 63) & vbNullChar ' 標題限 63 字
-        .szInfo = Left$(tipText & String$(255, vbNullChar), 255) & vbNullChar ' 內文限 255 字
+        .szInfoTitle = left$(tipTitle & String$(63, vbNullChar), 63) & vbNullChar ' 標題限 63 字
+        .szInfo = left$(tipText & String$(255, vbNullChar), 255) & vbNullChar ' 內文限 255 字
         .dwInfoFlags = NIIF_INFO
         .uTimeoutOrVersion = 10 ' 停留 10 秒
     End With

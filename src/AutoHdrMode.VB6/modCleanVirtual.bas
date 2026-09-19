@@ -146,7 +146,7 @@ NextDev:
     End If
     
     ' 45 喷靡癹伴
-    left = 45 ' 程喷 45 
+    left = 10 ' 程喷 10 
     Do While left > 0
         Sleep 2000 ' ㄢ喷Ω
         left = left - 2 ' Ιㄢ
@@ -188,4 +188,21 @@ Nx:
     Exit Function
 Fail:
     CountVirtualLeft = -1 ' 琩高ア毖 -1
+End Function
+
+' ノ硚琩﹚杆竚琌ア篈近高–近程 5 近
+Private Function PnpDeviceGone(ByVal instId As String) As Boolean
+    On Error Resume Next
+    Dim col As Object, i As Long, q As String
+    q = Replace$(instId, "'", "''") ' 虫ま腹铬叉ň WQL 瘆
+    For i = 1 To 5
+        Err.Clear
+        Set col = GetObject("winmgmts:\.\root\cimv2").ExecQuery( _
+            "SELECT DeviceID FROM Win32_PnPEntity WHERE DeviceID='" & q & "'")
+        If Err.Number = 0 Then
+            If col.Count = 0 Then PnpDeviceGone = True: Exit Function ' 琩礚=ア
+        End If
+        If i < 5 Then Sleep 1000 ' 程近何
+    Next
+    PnpDeviceGone = False
 End Function

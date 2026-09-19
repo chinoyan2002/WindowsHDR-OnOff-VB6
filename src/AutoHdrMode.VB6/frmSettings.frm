@@ -85,6 +85,14 @@ Begin VB.Form frmSettings
          Top             =   2160
          Width           =   6000
       End
+      Begin VB.Label lblFlow 
+         Caption         =   "流程（兩方向同結構）：偵測（輪詢秒×穩定次）→ 等DelayHDR → 開/關HDR → 等VerifySeconds驗收 → 清卡＋沉澱（失敗且開啟時）→ 等DelayShell → 跑Shell（等ShellTimeout）｜每段等待都從上段做完起算"
+         Height          =   1600
+         Left            =   120
+         TabIndex        =   64
+         Top             =   3050
+         Width           =   7200
+      End
       Begin VB.CheckBox chkBalloon 
          Caption         =   "顯示氣球提示"
          Height          =   300
@@ -148,7 +156,7 @@ Begin VB.Form frmSettings
 ' ---- 斷電頁：螢幕關的整套動作 ----
    Begin VB.PictureBox picOff 
       BorderStyle     =   0  '沒有框線
-      Height          =   4800
+      Height          =   4900
       Left            =   120
       ScaleHeight     =   4800
       ScaleWidth      =   7560
@@ -283,11 +291,57 @@ Begin VB.Form frmSettings
          Top             =   3660
          Width           =   4600
       End
+      Begin VB.Label lblOffDelayShell 
+         Caption         =   "Shell 執行前等待（秒）"
+         Height          =   255
+         Left            =   120
+         TabIndex        =   52
+         Top             =   4200
+         Width           =   2400
+      End
+      Begin VB.TextBox txtOffDelayShell 
+         Height          =   300
+         Left            =   2700
+         TabIndex        =   53
+         Top             =   4180
+         Width           =   900
+      End
+      Begin VB.Label lblOffDelayShellHint 
+         Caption         =   "HDR/驗證/清卡跑完、Shell前再等；0=不等"
+         Height          =   255
+         Left            =   3800
+         TabIndex        =   54
+         Top             =   4200
+         Width           =   3400
+      End
+      Begin VB.Label lblOffShellWait 
+         Caption         =   "Shell 等待秒數"
+         Height          =   255
+         Left            =   120
+         TabIndex        =   55
+         Top             =   4580
+         Width           =   2400
+      End
+      Begin VB.TextBox txtOffShellWait 
+         Height          =   300
+         Left            =   2700
+         TabIndex        =   56
+         Top             =   4560
+         Width           =   900
+      End
+      Begin VB.Label lblOffShellWaitHint 
+         Caption         =   "0=啟動即走，預設120秒"
+         Height          =   255
+         Left            =   3800
+         TabIndex        =   57
+         Top             =   4580
+         Width           =   3400
+      End
    End
 ' ---- 通電頁：螢幕開的整套動作（與斷電頁鏡像） ----
    Begin VB.PictureBox picOn 
       BorderStyle     =   0  '沒有框線
-      Height          =   4800
+      Height          =   4900
       Left            =   120
       ScaleHeight     =   4800
       ScaleWidth      =   7560
@@ -421,6 +475,52 @@ Begin VB.Form frmSettings
          TabIndex        =   45
          Top             =   3660
          Width           =   4600
+      End
+      Begin VB.Label lblOnDelayShell 
+         Caption         =   "Shell 執行前等待（秒）"
+         Height          =   255
+         Left            =   120
+         TabIndex        =   58
+         Top             =   4200
+         Width           =   2400
+      End
+      Begin VB.TextBox txtOnDelayShell 
+         Height          =   300
+         Left            =   2700
+         TabIndex        =   59
+         Top             =   4180
+         Width           =   900
+      End
+      Begin VB.Label lblOnDelayShellHint 
+         Caption         =   "HDR/驗證/清卡跑完、Shell前再等；0=不等"
+         Height          =   255
+         Left            =   3800
+         TabIndex        =   60
+         Top             =   4200
+         Width           =   3400
+      End
+      Begin VB.Label lblOnShellWait 
+         Caption         =   "Shell 等待秒數"
+         Height          =   255
+         Left            =   120
+         TabIndex        =   61
+         Top             =   4580
+         Width           =   2400
+      End
+      Begin VB.TextBox txtOnShellWait 
+         Height          =   300
+         Left            =   2700
+         TabIndex        =   62
+         Top             =   4560
+         Width           =   900
+      End
+      Begin VB.Label lblOnShellWaitHint 
+         Caption         =   "0=啟動即走，預設120秒"
+         Height          =   255
+         Left            =   3800
+         TabIndex        =   63
+         Top             =   4580
+         Width           =   3400
       End
    End
 ' ---- 記錄頁：讀記錄尾 ----
@@ -606,6 +706,8 @@ Private Sub LoadToUI()
     chkOffClean.Value = IIf(g_PowerOff.CleanHelper, vbChecked, vbUnchecked) ' 讀出：斷電清卡
     txtOffDelayClean.Text = CStr(g_PowerOff.DelayAfterClean) ' 讀出：斷電清後等待
     txtOffShell.Text = g_PowerOff.Shell ' 讀出：斷電 Shell
+    txtOffDelayShell.Text = CStr(g_PowerOff.DelayShell) ' 讀出：驗收後等待
+    txtOffShellWait.Text = CStr(g_PowerOff.ShellTimeout) ' 讀出：Shell 等待
 
     ' ---- 通電整組讀出（鏡像） ----
     chkOnEn.Value = IIf(g_PowerOn.Enabled, vbChecked, vbUnchecked) ' 讀出：通電啟用
@@ -615,6 +717,8 @@ Private Sub LoadToUI()
     chkOnClean.Value = IIf(g_PowerOn.CleanHelper, vbChecked, vbUnchecked) ' 讀出：通電清卡
     txtOnDelayClean.Text = CStr(g_PowerOn.DelayAfterClean) ' 讀出：通電清後等待
     txtOnShell.Text = g_PowerOn.Shell ' 讀出：通電 Shell
+    txtOnDelayShell.Text = CStr(g_PowerOn.DelayShell) ' 讀出：驗收後等待
+    txtOnShellWait.Text = CStr(g_PowerOn.ShellTimeout) ' 讀出：Shell 等待
 End Sub
 
 ' 用途：控制項寫回全域（含範圍夾限）
@@ -635,6 +739,12 @@ Private Sub UIToGlobals()
     g_PowerOff.CleanHelper = (chkOffClean.Value = vbChecked) ' 寫入：斷電清卡
     g_PowerOff.DelayAfterClean = val(txtOffDelayClean.Text) ' 寫入：斷電清後等待
     g_PowerOff.Shell = Trim$(txtOffShell.Text) ' 寫入：斷電 Shell（去空白）
+    g_PowerOff.DelayShell = val(txtOffDelayShell.Text) ' 寫入：驗收後等待（夾0~120）
+    If g_PowerOff.DelayShell < 0 Then g_PowerOff.DelayShell = 0
+    If g_PowerOff.DelayShell > 120 Then g_PowerOff.DelayShell = 120
+    g_PowerOff.ShellTimeout = val(txtOffShellWait.Text) ' 寫入：Shell 等待（夾0~3600）
+    If g_PowerOff.ShellTimeout < 0 Then g_PowerOff.ShellTimeout = 0
+    If g_PowerOff.ShellTimeout > 3600 Then g_PowerOff.ShellTimeout = 3600
 
     ' ---- 通電整組（鏡像） ----
     g_PowerOn.Enabled = (chkOnEn.Value = vbChecked) ' 寫入：通電啟用
@@ -644,6 +754,12 @@ Private Sub UIToGlobals()
     g_PowerOn.CleanHelper = (chkOnClean.Value = vbChecked) ' 寫入：通電清卡
     g_PowerOn.DelayAfterClean = val(txtOnDelayClean.Text) ' 寫入：通電清後等待
     g_PowerOn.Shell = Trim$(txtOnShell.Text) ' 寫入：通電 Shell（去空白）
+    g_PowerOn.DelayShell = val(txtOnDelayShell.Text) ' 寫入：驗收後等待（夾0~120）
+    If g_PowerOn.DelayShell < 0 Then g_PowerOn.DelayShell = 0
+    If g_PowerOn.DelayShell > 120 Then g_PowerOn.DelayShell = 120
+    g_PowerOn.ShellTimeout = val(txtOnShellWait.Text) ' 寫入：Shell 等待（夾0~3600）
+    If g_PowerOn.ShellTimeout < 0 Then g_PowerOn.ShellTimeout = 0
+    If g_PowerOn.ShellTimeout > 3600 Then g_PowerOn.ShellTimeout = 3600
 End Sub
 
 ' 用途：依 m_tab 顯示對應頁；記錄頁順手重讀

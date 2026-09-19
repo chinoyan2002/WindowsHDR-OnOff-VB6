@@ -47,8 +47,8 @@ Private Const WAIT_OBJECT_0 = 0 ' 等到結束代碼
 ' Run hidden via cmd.exe with workDir as cwd. Waits in 500ms slices with
 ' DoEvents so the tray stays responsive. Returns exit code, -1 on fail/timeout.
 ' NOTE: no output capture (unlike the .NET build) - log records rc only.
-' 隱藏執行並等最多 120 秒；每 500 毫秒讓出控制權以免托盤凍結
-Public Function ShellRunHidden(ByVal shellCmd As String, ByVal workDir As String) As Long
+' 等待上限吃參數秒數（0=啟動即走）；每 500 切一片讓托盤有反應
+Public Function ShellRunHidden(ByVal shellCmd As String, ByVal workDir As String, ByVal timeoutSec As Long) As Long
     On Error GoTo Fail
     Dim si As STARTUPINFO, pi As PROCESS_INFORMATION
     Dim cmd As String, rc As Long, wr As Long, waited As Long
@@ -60,13 +60,19 @@ Public Function ShellRunHidden(ByVal shellCmd As String, ByVal workDir As String
         ShellRunHidden = -1
         Exit Function
     End If
+    If timeoutSec <= 0 Then
+        CloseHandle pi.hThread
+        CloseHandle pi.hProcess
+        ShellRunHidden = 0 ' 0 秒：啟動即走，不等結束不卡排程
+        Exit Function
+    End If
     waited = 0
     Do
         wr = WaitForSingleObject(pi.hProcess, 500) ' 500 毫秒一切片
         If wr = WAIT_OBJECT_0 Then Exit Do
         DoEvents ' 讓托盤有反應，不凍結
         waited = waited + 500 ' 累計等待毫秒
-    Loop While waited < 120000 ' 上限 120 秒：防卡死
+    Loop While waited < CLng(timeoutSec) * 1000 ' 上限=設定秒數
     If wr <> WAIT_OBJECT_0 Then TerminateProcess pi.hProcess, 99 ' 逾時殺掉，碼 99 識別
     If wr <> WAIT_OBJECT_0 Then
         rc = -1 ' 逾時或建失敗一律 -1

@@ -249,3 +249,11 @@ End Function
 Public Function S_LogHoldStandby(ByVal onN As Long, ByVal sbN As Long) As String ' 記錄：待命凍結
     If g_Chinese Then S_LogHoldStandby = "HOLD 待命不動作 on=" & onN & " standby=" & sbN Else S_LogHoldStandby = "HOLD standby no action on=" & onN & " standby=" & sbN
 End Function
+
+Public Function S_LogWaitShell(ByVal secs As Long) As String ' 記錄：Shell 前等待秒數
+    If g_Chinese Then S_LogWaitShell = "跑 Shell 前再等 " & secs & " 秒" Else S_LogWaitShell = "Wait " & secs & " s before shell"
+End Function
+
+Public Function S_LogShellLaunch() As String ' 記錄：Shell 已啟動不等候
+    If g_Chinese Then S_LogShellLaunch = "Shell 已啟動，不等候" Else S_LogShellLaunch = "Shell launched, not waiting"
+End Function

@@ -206,6 +206,15 @@ Shell 段：
 | on | `HDR_GetStatus = HDR_ON` |
 | off | 僅 `HDR_OFF` 算通過；`UNSUPPORTED` 視為未通過，可走清卡重試 |
 
+### 6.2.1 DelayShell（Shell 執行前等待）
+
+驗收通過／失敗／清卡重試三條路最後都會進 `DoShellStep`；進去先看 `DelayShell`：
+
+- `> 0`：記 log，排 `PH_WAIT_SHELL`，到期才真正跑 Shell（碼表從進入此步起算）。
+- `= 0`：直跑 Shell。
+
+CLI `FireCli`／`FireTransitionCore` 同語意（blocking 等）。
+
 ### 6.3 （已併入 6.2）
 
 ### 6.4 HDR 與 Shell 可組合性
@@ -258,7 +267,7 @@ CLI `--fire-on/--fire-off`：同步簡化路徑（HDR + Shell，清卡狀態機�
 AutoHdrMode.exe --clean
 ```
 
-並等待子行程結束（最多約 120 秒，DoEvents 切片）。
+並等待子行程結束（最多約 3 秒，DoEvents 切片）。
 
 ### 8.2 `--clean` 行為（modMain.CleanCli）
 
@@ -267,11 +276,15 @@ AutoHdrMode.exe --clean
    - WMI `Win32_PnPEntity`，`PNPClass='Display'`
    - Friendly/Name **不含** AMD / NVIDIA / Intel → `pnputil /remove-device`
    - 優先 `%WINDIR%\sysnative\pnputil.exe` 否則 System32
-   - 最多約 45 秒輪詢直到無虛擬卡或逾時
+   - 最多約 10 秒輪詢直到無虛擬卡或逾時
 
 `IsElevated`：`OpenProcessToken` + `TokenElevation`。
 
 ---
+
+### 8.3 逐台輪詢（取代傻等）
+
+拔卡後不再 `Sleep 1000` 硬等：`PnpDeviceGone(instId)` 先查一次，存在才每秒一輪、最多 5 輪；5 秒還在記逾時走下一台。收尾確認圈 10 秒（`left = 10`，2 秒一驗）。
 
 ## 9. 命令列介面
 
@@ -320,7 +333,9 @@ HKCU\Software\Microsoft\Windows\CurrentVersion\Run\AutoHdrMode
 | NativeHDR | off | on | on / off / 空＝不做 HDR |
 | VerifySeconds | 2 | 2 | HDR 後查狀態前等待，0～60；0＝不驗證 |
 | CleanHelper | 1 | 1 | 驗證失敗時清虛擬卡後重試（兩邊皆可） |
-| DelayAfterClean | 5 | 5 | 清卡後～重試 HDR，0～120 |
+| DelayAfterClean | 5 | 15 |
+| DelayShell | 0 | 0 | Shell 前等待，全路徑皆等，0~120
+| ShellTimeout | 120 | 120 | Shell 等待秒數，0~3600；0=啟動即走 清卡後～重試 HDR，0～120 |
 | Shell | 空 | 空 | 見 §6.5 |
 
 兼容：若仍存在舊鍵 `DelaySeconds`，`DelayHDR` 可回退讀取該值。

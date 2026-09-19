@@ -11,6 +11,8 @@ Public Type TransCfg
     CleanHelper As Boolean    ' 僅通電：驗證仍 OFF 時清虛擬卡
     DelayAfterClean As Long   ' 清卡後、重試 HDR 前
     Shell As String           ' 空白或不存在則不執行
+    DelayShell As Long ' Shell 執行前等待秒數（0=不等）
+    ShellTimeout As Long ' Shell 等待秒數（0=啟動即走）
 End Type
 
 ' ---- 全域設定（記憶體駐留，存檔才寫碟） ----
@@ -56,7 +58,7 @@ End Sub
 Private Sub LoadTrans(ByVal ini As String, ByVal sec As String, ByRef c As TransCfg, ByVal isOn As Boolean)
     Dim defHDR As String, defVer As String, defClean As String, defAfter As String
     If isOn Then
-        defHDR = "on": defVer = "2": defClean = "1": defAfter = "5" ' 通電預設：開 HDR、驗 2 秒、可清卡、清後等 5 秒
+        defHDR = "on": defVer = "2": defClean = "1": defAfter = "15" ' 通電預設：開 HDR、驗 2 秒、可清卡、清後等 5 秒
     Else
         defHDR = "off": defVer = "2": defClean = "1": defAfter = "5" ' 斷電預設：關 HDR（其餘同通電）
     End If
@@ -72,6 +74,12 @@ Private Sub LoadTrans(ByVal ini As String, ByVal sec As String, ByRef c As Trans
     If c.VerifySeconds > 60 Then c.VerifySeconds = 60 ' 驗證 0~60 秒
     If c.DelayAfterClean < 0 Then c.DelayAfterClean = 0
     If c.DelayAfterClean > 120 Then c.DelayAfterClean = 120 ' 清後等 0~120 秒
+    c.DelayShell = Val(IniGet(ini, sec, "DelayShell", "0"))
+    If c.DelayShell < 0 Then c.DelayShell = 0 ' 驗收後等 0~120 秒
+    If c.DelayShell > 120 Then c.DelayShell = 120
+    c.ShellTimeout = Val(IniGet(ini, sec, "ShellTimeout", "120"))
+    If c.ShellTimeout < 0 Then c.ShellTimeout = 0 ' Shell 等 0~3600 秒
+    If c.ShellTimeout > 3600 Then c.ShellTimeout = 3600
     c.Shell = Trim$(IniGet(ini, sec, "Shell", ""))
 End Sub
 
@@ -98,6 +106,8 @@ Private Sub SaveTrans(ByVal ini As String, ByVal sec As String, ByRef c As Trans
     Call IniSet(ini, sec, "VerifySeconds", CStr(c.VerifySeconds))
     Call IniSet(ini, sec, "CleanHelper", IIf(c.CleanHelper, "1", "0"))
     Call IniSet(ini, sec, "DelayAfterClean", CStr(c.DelayAfterClean))
+    Call IniSet(ini, sec, "DelayShell", CStr(c.DelayShell))
+    Call IniSet(ini, sec, "ShellTimeout", CStr(c.ShellTimeout))
     Call IniSet(ini, sec, "Shell", c.Shell)
 End Sub
 
