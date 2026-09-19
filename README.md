@@ -4,7 +4,7 @@ VB6 直接呼叫 Windows Display Configuration API 控制 Windows HDR。
 
 ## 版本
 
-v1.3
+v1.4
 
 ## 特色
 
@@ -21,6 +21,7 @@ v1.3
 - 錯誤與狀態訊息統一使用繁體中文
 - 使用 20-byte RTL_OSVERSIONINFOW 取得 Major / Minor / Build，並輸出完整版本
 - 函數、重要變數與結構均加入繁體中文註解
+- 可在 VB6 IDE 啟用 XP 相容模式時，仍以 Registry 取得實際 Windows Build
 
 ## Windows 11 24H2 以上
 
@@ -62,6 +63,6 @@ v1.3
 
 本專案針對 VB6 32-bit。Windows Display Configuration 結構以 Byte Array + RtlMoveMemory 解析，降低 VB6 對 Union、Bit Field 與結構對齊的風險。
 
-目前尚需在實際 VB6 IDE 與 Windows 11 24H2 / 25H2 環境完成編譯及實機驗證。
+版本資訊優先從 Windows Registry 取得，避免 VB6 IDE 的 XP 相容模式造成 5.1.2600 偽版本；HDR API 路徑則直接探測新版 API。仍需在實際 VB6 IDE 與 Windows 11 24H2 / 25H2 環境完成編譯及實機驗證。
 
 底層 API 模組刻意不加入 Timer、WM_DISPLAYCHANGE 或 WM_DEVICECHANGE；若 VMini6 後續需要常駐監控，應在上層加入重新查詢機制。
