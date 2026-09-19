@@ -4,7 +4,7 @@ VB6 直接呼叫 Windows Display Configuration API 控制 Windows HDR。
 
 ## 版本
 
-v1.2
+v1.3
 
 ## 特色
 
@@ -19,6 +19,7 @@ v1.2
 - Set 完成後重新查詢並驗證實際狀態
 - 取得 Friendly Name、EDID 來源與 Forced Target 狀態
 - 錯誤與狀態訊息統一使用繁體中文
+- 使用 20-byte RTL_OSVERSIONINFOW 取得 Major / Minor / Build，並輸出完整版本
 - 函數、重要變數與結構均加入繁體中文註解
 
 ## Windows 11 24H2 以上
