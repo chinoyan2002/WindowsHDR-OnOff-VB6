@@ -74,6 +74,7 @@ Attribute VB_Creatable = False
 Attribute VB_PredeclaredId = True
 Attribute VB_Exposed = False
 Option Explicit
+' 本窗：常駐本體。托盤圖示＋輪詢＋通電斷電狀態機；唯一出口 mnuExit
 
 Private Type NOTIFYICONDATA
     cbSize As Long
@@ -164,6 +165,7 @@ Private m_nid As NOTIFYICONDATA
 Private m_trayAdded As Boolean
 Private m_holdLogged As Boolean
 
+' 用途：托盤窗啟動：建圖示、套選單文字、啟動輪詢並做第一次偵測
 Private Sub Form_Load()
     Me.ScaleMode = vbPixels
     Me.Move -32000, -32000
@@ -192,6 +194,7 @@ Private Sub Form_Load()
     m_phase = PH_IDLE
     m_lastErr = ""
     LogMsg S_LogStart(g_PollSec, g_StableN, g_AutoOn)
+    LogMsg AppVersionLine()
     
     Call InitTray(S_TipStarting())
     Me.Hide
@@ -199,10 +202,13 @@ Private Sub Form_Load()
     PollOnce
 End Sub
 
+' 用途：布林轉 0/1；回傳：開=1、關=0
 Private Function PresentInt(ByVal present As Boolean) As Integer
     If present Then PresentInt = 1 Else PresentInt = 0
 End Function
 
+' 用途：每輪偵測一次；三叉：開/待命HOLD/關
+' 注意：HOLD 不碰候選值與穩定計數，離開後正常判定
 Private Sub PollOnce()
     On Error GoTo Fail
     Dim n As Long, sb As Long
@@ -260,14 +266,17 @@ Private Sub StartTransition(ByVal wantOn As Boolean)
     LogMsg S_LogPlanHdr(wantOn, cfg.DelayHDR)
 End Sub
 
+' 用途：輪詢節拍，回呼 PollOnce
 Private Sub tmrPoll_Timer()
     PollOnce
 End Sub
 
+' 用途：排程時間是否已到（相減比大小，天然防 GetTickCount 溢位）；回傳：到期=True
 Private Function TickPassed(ByVal due As Long) As Boolean
     TickPassed = (GetTickCount() - due >= 0)
 End Function
 
+' 用途：排程節拍；中途狀態翻回來則取消排程
 Private Sub tmrWait_Timer()
     If m_pending = -1 Or m_phase = PH_IDLE Then
         tmrWait.Enabled = False
@@ -332,6 +341,7 @@ Fail:
     FinishPhase
 End Sub
 
+' 用途：驗證是否達標；on 鏈要 HDR_ON、off 鏈要 HDR_OFF；回傳：達標=True
 Private Function HdrVerifyOk(ByRef cfg As TransCfg, ByVal st As HDR_STATUS) As Boolean
     ' on → 必須 ON；off → 必須 OFF（UNSUPPORTED 不算通過，可走清卡重試）
     If cfg.NativeHDR = "on" Then
@@ -343,6 +353,7 @@ Private Function HdrVerifyOk(ByRef cfg As TransCfg, ByVal st As HDR_STATUS) As B
     End If
 End Function
 
+' 用途：驗證等候到期後讀狀態；失敗且 CleanHelper=1 則提權清卡
 Private Sub DoVerifyStep(ByVal wantOn As Boolean)
     On Error GoTo Fail
     Dim cfg As TransCfg, st As HDR_STATUS
@@ -375,6 +386,7 @@ Fail:
     FinishPhase
 End Sub
 
+' 用途：清卡等候到期後重做一次 HDR 開關，再走 Shell
 Private Sub DoRetryHdrAfterClean(ByVal wantOn As Boolean)
     On Error GoTo Fail
     Dim cfg As TransCfg, ok As Boolean
@@ -395,6 +407,7 @@ Fail:
     FinishPhase
 End Sub
 
+' 用途：排程最後一步：Shell 空白或目標不存在就跳過，否則隱藏執行；收尾 FinishPhase
 Private Sub DoShellStep(ByVal wantOn As Boolean)
     On Error GoTo Fail
     Dim cfg As TransCfg, rc As Long
@@ -416,12 +429,14 @@ Fail:
     FinishPhase
 End Sub
 
+' 用途：清排程狀態回閒置
 Private Sub FinishPhase()
     m_pending = -1
     m_phase = PH_IDLE
     tmrWait.Enabled = False
 End Sub
 
+' 用途：runas 提權起自己 --clean，最多等 120 秒；回傳：子行程結束碼
 Private Function RunCleanElevated() As Long
     On Error GoTo Fail
     Dim sei As SHELLEXECUTEINFO
@@ -462,12 +477,14 @@ Fail:
     RunCleanElevated = 1
 End Function
 
+' 用途：托盤選單切換自動（只改記憶體，存檔走設定窗）
 Private Sub mnuAuto_Click()
     mnuAuto.Checked = Not mnuAuto.Checked
     g_AutoOn = mnuAuto.Checked
     LogMsg S_LogAutoToggle(g_AutoOn)
 End Sub
 
+' 用途：托盤選單切換氣球提示，立即寫 INI
 Private Sub mnuBalloon_Click()
     mnuBalloon.Checked = Not mnuBalloon.Checked
     g_Balloon = mnuBalloon.Checked
@@ -475,16 +492,19 @@ Private Sub mnuBalloon_Click()
     LogMsg S_LogBalloonToggle(g_Balloon)
 End Sub
 
+' 用途：手動立即跑斷電鏈
 Private Sub mnuFireOff_Click()
     LogMsg S_LogManual(False)
     StartTransition False
 End Sub
 
+' 用途：手動立即跑通電鏈
 Private Sub mnuFireOn_Click()
     LogMsg S_LogManual(True)
     StartTransition True
 End Sub
 
+' 用途：手動直接開 HDR（不跑鏈）
 Private Sub mnuHdrOn_Click()
     On Error Resume Next
     Dim ok As Boolean
@@ -493,6 +513,7 @@ Private Sub mnuHdrOn_Click()
     LogMsg S_LogNativeResult(ok, HDR_GetStatus(0))
 End Sub
 
+' 用途：手動直接關 HDR（不跑鏈）
 Private Sub mnuHdrOff_Click()
     On Error Resume Next
     Dim ok As Boolean
@@ -501,6 +522,7 @@ Private Sub mnuHdrOff_Click()
     LogMsg S_LogNativeResult(ok, HDR_GetStatus(0))
 End Sub
 
+' 用途：手動提權清虛擬卡
 Private Sub mnuClean_Click()
     On Error Resume Next
     Dim crc As Long
@@ -509,10 +531,12 @@ Private Sub mnuClean_Click()
     LogMsg S_LogCleanDone(crc)
 End Sub
 
+' 用途：開設定窗一般頁
 Private Sub mnuSettings_Click()
     OpenSettings 0
 End Sub
 
+' 用途：開設定窗指定分頁；參數 tabIdx：0一般 1斷電 2通電 3記錄
 Public Sub OpenSettings(ByVal tabIdx As Integer)
     On Error Resume Next
     frmSettings.ShowTab tabIdx
@@ -521,6 +545,7 @@ Public Sub OpenSettings(ByVal tabIdx As Integer)
     frmSettings.SetFocus
 End Sub
 
+' 用途：用檔案總管選取開啟記錄檔
 Private Sub mnuLog_Click()
     On Error GoTo Fail
     ShellExecute Me.hwnd, "open", "explorer.exe", "/select,""" & g_LogFile & """", "", SW_SHOWNORMAL
@@ -529,6 +554,7 @@ Fail:
     LogMsg S_LogOpenLogErr(Err.Description)
 End Sub
 
+' 用途：唯一出口：拆托盤圖示、寫結束記錄、卸載結束
 Private Sub mnuExit_Click()
     TrayRemove
     LogMsg S_LogExit()
@@ -538,6 +564,7 @@ Private Sub mnuExit_Click()
     End
 End Sub
 
+' 用途：註冊托盤圖示；圖示取 Me.Icon（.frx），取不到退回系統預設
 Private Sub InitTray(ByVal MouseMoveTip As String)
     Dim hIco As Long
     On Error Resume Next
@@ -568,6 +595,7 @@ Private Sub InitTray(ByVal MouseMoveTip As String)
     End If
 End Sub
 
+' 用途：更新托盤懸停文字
 Private Sub TrayTip(ByVal txt As String)
     Dim tip As String
     If Not m_trayAdded Then Exit Sub
@@ -578,6 +606,7 @@ Private Sub TrayTip(ByVal txt As String)
     Shell_NotifyIconA NIM_MODIFY, m_nid
 End Sub
 
+' 用途：移除托盤圖示（結束時）
 Private Sub TrayRemove()
     If m_trayAdded Then
         Shell_NotifyIconA NIM_DELETE, m_nid
@@ -585,6 +614,7 @@ Private Sub TrayRemove()
     End If
 End Sub
 
+' 用途：托盤回呼：右鍵放開彈選單、左鍵或雙擊開設定
 Private Sub Form_MouseMove(Button As Integer, Shift As Integer, X As Single, Y As Single)
     Dim msg As Long
     If Not m_trayAdded Then Exit Sub
@@ -605,6 +635,7 @@ Private Sub Form_MouseMove(Button As Integer, Shift As Integer, X As Single, Y A
     End Select
 End Sub
 
+' 用途：彈右鍵選單（先搶前景，防選單卡住不消失）
 Private Sub ShowTrayMenu()
     On Error Resume Next
     Call SetForegroundWindow(Me.hwnd)
@@ -613,10 +644,12 @@ Private Sub ShowTrayMenu()
 End Sub
 
 
+' 用途：卸載時確保托盤圖示移除
 Private Sub Form_Unload(Cancel As Integer)
     TrayRemove
 End Sub
 
+' 用途：氣球通知；g_Balloon 關閉時直接返回
 Private Sub TrayBalloon(ByVal tipTitle As String, ByVal tipText As String)
     If Not g_Balloon Then Exit Sub
     If Not m_trayAdded Then Exit Sub

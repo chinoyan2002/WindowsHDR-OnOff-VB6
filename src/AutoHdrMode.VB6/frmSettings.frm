@@ -486,25 +486,29 @@ Attribute VB_Creatable = False
 Attribute VB_PredeclaredId = True
 Attribute VB_Exposed = False
 Option Explicit
+' 本窗：設定 UI（Startup 進入點）。四分頁＋記錄尾讀；X 只隱藏
 
 Private m_tab As Integer
 Private m_lastLog As String
 Private m_pause As Boolean
 
+' 用途：切分頁；參數 idx：0一般 1斷電 2通電 3記錄
 Public Sub ShowTab(ByVal idx As Integer)
     m_tab = idx
     If Me.Visible Then ApplyTab
 End Sub
 
+' 用途：隱藏測試鈕：直接清虛擬卡（除錯用）
 Private Sub Command1_Click()
     Call CleanVirtualGpus
 End Sub
 
+' 用途：程式進入點 Startup：跑 AppBootstrap、載托盤窗、套 UI；首次執行才顯示
 Private Sub Form_Load()
     Call AppBootstrap
     Load frmTray
     
-    Me.Caption = "AutoHdrMode 設定"
+        Me.Caption = AppVersionLine()
     btnTab0.Caption = "一般"
     btnTab1.Caption = "斷電"
     btnTab2.Caption = "通電"
@@ -540,6 +544,7 @@ Private Sub Form_Load()
     End If
 End Sub
 
+' 用途：NativeHDR 字串轉下拉索引；回傳：0略過 1開 2關
 Private Function HdrToIndex(ByVal cbo As ComboBox, ByVal v As String, ByVal isOn As Boolean) As Long
     v = LCase$(Trim$(v))
     If isOn Then
@@ -561,6 +566,7 @@ Private Function HdrToIndex(ByVal cbo As ComboBox, ByVal v As String, ByVal isOn
     End If
 End Function
 
+' 用途：下拉索引轉 NativeHDR 字串
 Private Function IndexToHdr(ByVal cbo As ComboBox, ByVal isOn As Boolean) As String
     Dim i As Long
     i = cbo.ListIndex
@@ -580,6 +586,7 @@ Private Function IndexToHdr(ByVal cbo As ComboBox, ByVal isOn As Boolean) As Str
     End If
 End Function
 
+' 用途：全域設定灌入控制項
 Private Sub LoadToUI()
     txtPoll.Text = CStr(g_PollSec)
     txtStable.Text = CStr(g_StableN)
@@ -604,6 +611,7 @@ Private Sub LoadToUI()
     txtOnShell.Text = g_PowerOn.Shell
 End Sub
 
+' 用途：控制項寫回全域（含範圍夾限）
 Private Sub UIToGlobals()
     g_PollSec = val(txtPoll.Text)
     If g_PollSec < 1 Then g_PollSec = 1
@@ -630,6 +638,7 @@ Private Sub UIToGlobals()
     g_PowerOn.Shell = Trim$(txtOnShell.Text)
 End Sub
 
+' 用途：依 m_tab 顯示對應頁；記錄頁順手重讀
 Private Sub ApplyTab()
     picMain.Visible = (m_tab = 0)
     picOff.Visible = (m_tab = 1)
@@ -648,19 +657,24 @@ Private Sub ApplyTab()
     If m_tab = 3 Then RefreshLog
 End Sub
 
+' 用途：分頁鈕：切一般頁
 Private Sub btnTab0_Click()
     m_tab = 0: ApplyTab
 End Sub
+' 用途：分頁鈕：切斷電頁
 Private Sub btnTab1_Click()
     m_tab = 1: ApplyTab
 End Sub
+' 用途：分頁鈕：切通電頁
 Private Sub btnTab2_Click()
     m_tab = 2: ApplyTab
 End Sub
+' 用途：分頁鈕：切記錄頁
 Private Sub btnTab3_Click()
     m_tab = 3: ApplyTab
 End Sub
 
+' 用途：存檔：UI→全域→寫 INI→套自啟→同步托盤；存完不關窗
 Private Sub btnSave_Click()
     On Error Resume Next
     UIToGlobals
@@ -677,10 +691,12 @@ Private Sub btnSave_Click()
     ' 儲存後不關閉視窗，方便繼續調整
 End Sub
 
+' 用途：關窗鈕只隱藏（常駐繼續）
 Private Sub btnClose_Click()
     Me.Hide
 End Sub
 
+' 用途：點 X 只隱藏，擋掉真正關閉
 Private Sub Form_QueryUnload(Cancel As Integer, UnloadMode As Integer)
     If UnloadMode = vbFormControlMenu Then
         Cancel = True
@@ -691,15 +707,18 @@ Private Sub Form_QueryUnload(Cancel As Integer, UnloadMode As Integer)
     tmrLog.Enabled = False
 End Sub
 
+' 用途：記錄頁暫停或繼續自動捲動
 Private Sub chkPause_Click()
     m_pause = (chkPause.Value = vbChecked)
 End Sub
 
+' 用途：記錄頁節拍：可見且未暫停時重讀記錄尾
 Private Sub tmrLog_Timer()
     If Not picLog.Visible Or m_pause Then Exit Sub
     RefreshLog
 End Sub
 
+' 用途：讀記錄尾 200 行；內容相同不重繪（防閃爍）
 Private Sub RefreshLog()
     On Error GoTo Fail
     Dim fn As Integer, line As String, buf As String

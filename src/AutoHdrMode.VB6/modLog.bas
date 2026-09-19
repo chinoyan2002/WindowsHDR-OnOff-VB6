@@ -1,12 +1,14 @@
 Attribute VB_Name = "modLog"
 ' 本模組：寫紀錄檔（ANSI）；最多保留 LOG_MAX_LINES 行，超出刪舊留新
 Option Explicit
+' 記錄模組：autohdrmode.log 寫入與截斷
 
 Public g_LogFile As String
 
 Private Const LOG_MAX_LINES As Long = 2000
 Private m_writeCount As Long
 
+' 用途：決定記錄檔路徑（LogDir 空白則放 exe 目錄）
 Public Sub LogInit(ByVal dir As String)
     On Error Resume Next
     If dir = "" Then dir = App.Path
@@ -18,6 +20,7 @@ Public Sub LogInit(ByVal dir As String)
     Call LogTrimToMax
 End Sub
 
+' 用途：寫一行記錄（含時間戳）；定期檢查截斷
 Public Sub LogMsg(ByVal msg As String)
     On Error Resume Next
     Dim fn As Integer

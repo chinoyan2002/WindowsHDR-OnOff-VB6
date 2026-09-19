@@ -19,6 +19,7 @@ Private m_StandbyCount As Long                                                  
 
 
 
+' 用途：單次列舉全部螢幕，同步填三組計數（通電、待命、總數）
 Private Sub EnumAll()
     m_MonitorCount = 0
     m_PowerOnCount = 0
@@ -26,15 +27,18 @@ Private Sub EnumAll()
     EnumDisplayMonitors 0, 0, AddressOf MonitorEnumProc, 0                      ' 列舉所有顯示器
 End Sub
 
+' 用途：D6=1 通電台數；每次呼叫重新列舉
 Public Function WmiPhysicalCount() As Long
     EnumAll
     WmiPhysicalCount = m_PowerOnCount                                           ' DDC/CI D6 通電台數
 End Function
 
+' 用途：D6=2/3 待命台數；須先呼叫 WmiPhysicalCount 才有新值
 Public Function WmiStandbyCount() As Long
     WmiStandbyCount = m_StandbyCount                                            ' 需先呼叫 WmiPhysicalCount
 End Function
 
+' 用途：EnumDisplayMonitors 回呼；D6=1 計通電、2/3 計待命，餘不計；回傳 1 繼續下一個
 Public Function MonitorEnumProc(ByVal hMonitor As Long, ByVal hdcMonitor As Long, ByVal lprcMonitor As Long, ByVal dwData As Long) As Long
     Dim physMon As PHYSICAL_MONITOR, vct As Long, currentVal As Long, maxVal As Long
     If GetPhysicalMonitorsFromHMONITOR(hMonitor, 1, physMon) Then

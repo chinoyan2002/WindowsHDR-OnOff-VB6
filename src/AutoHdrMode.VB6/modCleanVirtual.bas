@@ -2,6 +2,7 @@ Attribute VB_Name = "modCleanVirtual"
 ' 本模組：清除虛擬顯示卡（pnputil），僅在通電且需要時由提權 --clean 模式呼叫
 ' 邏輯：AMD/NVIDIA/Intel 以外全砍 + 45 秒驗證迴圈
 Option Explicit
+' 清卡模組：辨識並移除虛擬顯示卡，必要時提權
 
 Private Type STARTUPINFO
     cb As Long
@@ -163,6 +164,7 @@ Fail:
     CleanVirtualGpus = 1
 End Function
 
+' 用途：數殘留虛擬卡（驗證清卡成效）
 Private Function CountVirtualLeft() As Long
     On Error GoTo Fail
     Dim col As Object, mo As Object, Name As String, n As Long

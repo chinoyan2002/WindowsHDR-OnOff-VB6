@@ -73,6 +73,7 @@ Fail:
     CleanCli = 1
 End Function
 
+' 用途：--probe：輸出通電與待命台數；回傳：0開 1關 3待命
 Private Function ProbeRun() As Long
     Dim n As Long, sb As Long
     n = WmiPhysicalCount()
@@ -218,6 +219,7 @@ Fail:
     LogMsg S_LogAutoErr(Err.Description)
 End Sub
 
+' 用途：查 HKCU Run 是否已註冊開機啟動；回傳：有=True
 Public Function AutostartInstalled() As Boolean
     On Error Resume Next
     Dim ws As Object, key As String, cur As String
@@ -228,6 +230,7 @@ Public Function AutostartInstalled() As Boolean
     Err.Clear
 End Function
 
+' 用途：寫入或刪除 HKCU Run 開機啟動；參數 install=True 註冊、False 刪除
 Public Function AutostartSet(ByVal install As Boolean) As Boolean
     On Error GoTo Fail
     Dim ws As Object, key As String, exe As String
@@ -256,4 +259,29 @@ Public Function AutostartSet(ByVal install As Boolean) As Boolean
 Fail:
     LogMsg S_LogAsErr(Err.Description)
     AutostartSet = False
+End Function
+
+' 版本字串：vbp 版號 Major.Minor.Revision，Revision 每次編譯自動加一
+Public Function AppVersionText() As String
+    On Error Resume Next
+    AppVersionText = "v" & App.Major & "." & App.Minor & "." & App.Revision
+End Function
+
+' 編譯日期：取 exe 檔寫入時間；IDE 內執行無 exe 時回傳 IDE
+Public Function AppBuildText() As String
+    On Error GoTo Fail
+    Dim exe As String
+    exe = App.Path
+    If Right$(exe, 1) <> "\" Then exe = exe & "\"
+    exe = exe & App.EXEName & ".exe"
+    If Dir$(exe) = "" Then AppBuildText = "IDE": Exit Function
+    AppBuildText = Format$(FileDateTime(exe), "yyyy-mm-dd hh:nn")
+    Exit Function
+Fail:
+    AppBuildText = "IDE"
+End Function
+
+' 標題列用：AutoHdrMode v1.0.3 (2026-09-19 23:06)，數字無需翻譯
+Public Function AppVersionLine() As String
+    AppVersionLine = "AutoHdrMode " & AppVersionText() & " (" & AppBuildText() & ")"
 End Function

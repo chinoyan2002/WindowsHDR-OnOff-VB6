@@ -1,5 +1,6 @@
 Attribute VB_Name = "modLang"
 Option Explicit
+' 語言模組：全部 UI 與記錄字串；g_Chinese=True 繁中否則英文，auto 跟系統
 Public g_Chinese As Boolean
 Private Declare Function GetUserDefaultUILanguage Lib "kernel32" () As Integer
 
@@ -16,6 +17,7 @@ Public Sub LangInit(ByVal mode As String)
     End Select
 End Sub
 
+' ---- 托盤選單文字 ----
 Public Function S_MenuAuto() As String
     If g_Chinese Then S_MenuAuto = "自動切換" Else S_MenuAuto = "Auto switch"
 End Function
@@ -44,6 +46,7 @@ Public Function S_MenuExit() As String
     If g_Chinese Then S_MenuExit = "結束程式" Else S_MenuExit = "Exit"
 End Function
 
+' ---- 托盤懸停提示 ----
 Public Function S_TipStarting() As String
     If g_Chinese Then S_TipStarting = "AutoHdrMode 啟動中" Else S_TipStarting = "AutoHdrMode starting"
 End Function
@@ -55,6 +58,7 @@ Public Function S_TipState(ByVal isOn As Boolean) As String
     End If
 End Function
 
+' ---- 記錄檔字串 ----
 Public Function S_LogStart(ByVal poll As Long, ByVal stable As Long, ByVal autoOn As Boolean) As String
     If g_Chinese Then
         S_LogStart = "程式啟動。輪詢間隔 " & poll & " 秒，穩定確認 " & stable & " 次，自動切換=" & IIf(autoOn, "開", "關")
@@ -225,6 +229,7 @@ Public Function S_LogSettingsSaved() As String
     If g_Chinese Then S_LogSettingsSaved = "設定已儲存" Else S_LogSettingsSaved = "Settings saved"
 End Function
 
+' ---- 氣球與待命（新增） ----
 Public Function S_MenuBalloon() As String
     If g_Chinese Then S_MenuBalloon = "氣球提示" Else S_MenuBalloon = "Balloon tip"
 End Function

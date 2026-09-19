@@ -1,6 +1,7 @@
 Attribute VB_Name = "modConfig"
 ' 讀 AutoHdrMode.ini
 Option Explicit
+' 設定模組：讀寫 AutoHdrMode.ini；TransCfg 為單方向參數組
 
 Public Type TransCfg
     Enabled As Boolean
@@ -26,6 +27,7 @@ Public g_FirstRun As Boolean          ' INI 不存在=第一次執行
 Private Declare Function GetPrivateProfileString Lib "kernel32" Alias "GetPrivateProfileStringA" (ByVal lpApp As String, ByVal lpKey As String, ByVal lpDef As String, ByVal lpRet As String, ByVal nSize As Long, ByVal lpFile As String) As Long
 Private Declare Function WritePrivateProfileString Lib "kernel32" Alias "WritePrivateProfileStringA" (ByVal lpApp As String, ByVal lpKey As String, ByVal lpVal As String, ByVal lpFile As String) As Long
 
+' 用途：讀 INI；檔不存在視為首次執行；數值夾上下限
 Public Sub ConfigLoad()
     Dim ini As String
     g_WorkDir = App.Path
@@ -49,6 +51,7 @@ Public Sub ConfigLoad()
     Call LoadTrans(ini, "PowerOn", g_PowerOn, True)
 End Sub
 
+' 用途：讀單方向參數；參數 isOn 決定通電或斷電預設值
 Private Sub LoadTrans(ByVal ini As String, ByVal sec As String, ByRef c As TransCfg, ByVal isOn As Boolean)
     Dim defHDR As String, defVer As String, defClean As String, defAfter As String
     If isOn Then
@@ -86,6 +89,7 @@ Public Sub ConfigSave()
     Call SaveTrans(ini, "PowerOn", g_PowerOn)
 End Sub
 
+' 用途：寫單方向參數
 Private Sub SaveTrans(ByVal ini As String, ByVal sec As String, ByRef c As TransCfg)
     Call IniSet(ini, sec, "Enabled", IIf(c.Enabled, "1", "0"))
     Call IniSet(ini, sec, "DelayHDR", CStr(c.DelayHDR))
@@ -96,6 +100,7 @@ Private Sub SaveTrans(ByVal ini As String, ByVal sec As String, ByRef c As Trans
     Call IniSet(ini, sec, "Shell", c.Shell)
 End Sub
 
+' 用途：讀 INI 鍵值；回傳：取不到回傳預設
 Public Function IniGet(ByVal iniFile As String, ByVal sec As String, ByVal key As String, ByVal deft As String) As String
     Dim buf As String, n As Long
     buf = Space$(1024)
@@ -103,6 +108,7 @@ Public Function IniGet(ByVal iniFile As String, ByVal sec As String, ByVal key A
     IniGet = Left$(buf, n)
 End Function
 
+' 用途：寫 INI 鍵值
 Private Sub IniSet(ByVal iniFile As String, ByVal sec As String, ByVal key As String, ByVal val As String)
     Call WritePrivateProfileString(sec, key, val, iniFile)
 End Sub
