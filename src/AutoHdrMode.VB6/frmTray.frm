@@ -1,52 +1,69 @@
 VERSION 5.00
-Begin VB.Form frmTray
+Begin VB.Form frmTray 
    Caption         =   "AutoHdrMode"
    ClientHeight    =   900
    ClientLeft      =   60
    ClientTop       =   345
    ClientWidth     =   1200
+   Icon            =   "frmTray.frx":0000
    LinkTopic       =   "Form1"
-   ScaleHeight     =   900
-   ScaleWidth      =   1200
-   ShowInTaskbar   =   0
-   StartUpPosition =   3
-   Visible         =   0
-   Begin VB.Timer tmrPoll
+   ScaleHeight     =   60
+   ScaleMode       =   3  '像素
+   ScaleWidth      =   80
+   ShowInTaskbar   =   0   'False
+   StartUpPosition =   3  '系統預設值
+   Visible         =   0   'False
+   Begin VB.Timer tmrPoll 
       Interval        =   1000
       Left            =   120
       Top             =   120
    End
-   Begin VB.Timer tmrWait
-      Enabled         =   0
+   Begin VB.Timer tmrWait 
+      Enabled         =   0   'False
       Interval        =   500
       Left            =   600
       Top             =   120
    End
-   Begin VB.Menu mnuTray
+   Begin VB.Menu mnuTray 
       Caption         =   "Tray"
-      Visible         =   0
-      Begin VB.Menu mnuAuto
+      Visible         =   0   'False
+      Begin VB.Menu mnuAuto 
          Caption         =   "Auto"
       End
-      Begin VB.Menu mnuFireOff
+      Begin VB.Menu mnuBalloon 
+         Caption         =   "Balloon"
+      End
+      Begin VB.Menu mnuFireOff 
          Caption         =   "FireOff"
       End
-      Begin VB.Menu mnuFireOn
+      Begin VB.Menu mnuFireOn 
          Caption         =   "FireOn"
       End
-      Begin VB.Menu mnuSep1
+      Begin VB.Menu mnuSepHdr 
          Caption         =   "-"
       End
-      Begin VB.Menu mnuLog
-         Caption         =   "Log"
+      Begin VB.Menu mnuHdrOn 
+         Caption         =   "HdrOn"
       End
-      Begin VB.Menu mnuLogWin
-         Caption         =   "LogWin"
+      Begin VB.Menu mnuHdrOff 
+         Caption         =   "HdrOff"
       End
-      Begin VB.Menu mnuSep2
+      Begin VB.Menu mnuClean 
+         Caption         =   "Clean"
+      End
+      Begin VB.Menu mnuSep1 
          Caption         =   "-"
       End
-      Begin VB.Menu mnuExit
+      Begin VB.Menu mnuSettings 
+         Caption         =   "Settings"
+      End
+      Begin VB.Menu mnuLog 
+         Caption         =   "LogFolder"
+      End
+      Begin VB.Menu mnuSep2 
+         Caption         =   "-"
+      End
+      Begin VB.Menu mnuExit 
          Caption         =   "Exit"
       End
    End
@@ -55,99 +72,152 @@ Attribute VB_Name = "frmTray"
 Attribute VB_GlobalNameSpace = False
 Attribute VB_Creatable = False
 Attribute VB_PredeclaredId = True
-' 本窗體：常駐本體（隱藏，不佔工作列）
-' tmrPoll=輪詢，tmrWait=延遲執行；狀態機：輪詢→去拖→穩定轉換→排程→執行
 Attribute VB_Exposed = False
 Option Explicit
 
-' 托盤圖示用的系統結構
 Private Type NOTIFYICONDATA
     cbSize As Long
     hwnd As Long
-    uID As Long
+    uId As Long
     uFlags As Long
-    uCallbackMessage As Long
+    uCallBackMessage As Long
     hIcon As Long
-    szTip As String * 64
+    szTip As String * 128
+    dwState As Long
+    dwStateMask As Long
+    szInfo As String * 256
+    uTimeoutOrVersion As Long
+    szInfoTitle As String * 64
+    dwInfoFlags As Long
 End Type
 
-' 以下：托盤／圖示／計時／開資料夾用的系統函式
-Private Declare Function Shell_NotifyIcon Lib "shell32" Alias "Shell_NotifyIconA" (ByVal dwMsg As Long, lpData As NOTIFYICONDATA) As Long
+Private Type POINTAPI
+    X As Long
+    Y As Long
+End Type
+
+Private Type SHELLEXECUTEINFO
+    cbSize As Long
+    fMask As Long
+    hwnd As Long
+    lpVerb As String
+    lpFile As String
+    lpParameters As String
+    lpDirectory As String
+    nShow As Long
+    hInstApp As Long
+    lpIDList As Long
+    lpClass As String
+    hkeyClass As Long
+    dwHotKey As Long
+    hIcon As Long
+    hProcess As Long
+End Type
+
+Private Declare Function Shell_NotifyIconA Lib "SHELL32.DLL" (ByVal dwMessage As Long, lpData As NOTIFYICONDATA) As Long
 Private Declare Function LoadIcon Lib "user32" Alias "LoadIconA" (ByVal hInst As Long, ByVal lpName As Long) As Long
 Private Declare Function GetTickCount Lib "kernel32" () As Long
 Private Declare Function ShellExecute Lib "shell32" Alias "ShellExecuteA" (ByVal hwnd As Long, ByVal lpOp As String, ByVal lpFile As String, ByVal lpParam As String, ByVal lpDir As String, ByVal nShow As Long) As Long
 Private Declare Function SetForegroundWindow Lib "user32" (ByVal hwnd As Long) As Long
+Private Declare Function PostMessage Lib "user32" Alias "PostMessageA" (ByVal hwnd As Long, ByVal wMsg As Long, ByVal wParam As Long, ByVal lParam As Long) As Long
+Private Declare Function GetCursorPos Lib "user32" (lpPoint As POINTAPI) As Long
+Private Declare Function ShellExecuteEx Lib "shell32" Alias "ShellExecuteExA" (sei As SHELLEXECUTEINFO) As Long
+Private Declare Function WaitForSingleObject Lib "kernel32" (ByVal hHandle As Long, ByVal dwMs As Long) As Long
+Private Declare Function CloseHandle Lib "kernel32" (ByVal hObject As Long) As Long
+Private Declare Function GetExitCodeProcess Lib "kernel32" (ByVal hProcess As Long, lpCode As Long) As Long
 
-Private Const NIM_ADD = &H0
-Private Const NIM_MODIFY = &H1
-Private Const NIM_DELETE = &H2
-Private Const NIF_MESSAGE = &H1
-Private Const NIF_ICON = &H2
-Private Const NIF_TIP = &H4
-Private Const WM_USER = &H400
-Private Const WM_RBUTTONUP = &H205
+Private Const NIF_ICON As Long = &H2
+Private Const NIF_INFO As Long = &H10
+Private Const NIF_MESSAGE As Long = &H1
+Private Const NIF_TIP As Long = &H4
+Private Const NIIF_INFO = &H1
+Private Const NIM_ADD As Long = &H0
+Private Const NIM_MODIFY As Long = &H1
+Private Const NIM_DELETE As Long = &H2
+Private Const WM_MOUSEMOVE = &H200
 Private Const WM_LBUTTONDBLCLK = &H203
-Private Const IDI_APPLICATION = 32512
+Private Const WM_LBUTTONDOWN = &H201
+Private Const WM_LBUTTONUP = &H202
+Private Const WM_RBUTTONDBLCLK = &H206
+Private Const WM_RBUTTONDOWN = &H204
+Private Const WM_RBUTTONUP = &H205
+Private Const WM_NULL = &H0
+Private Const IDI_APPLICATION = 32512&
 Private Const SW_SHOWNORMAL = 1
+Private Const SEE_MASK_NOCLOSEPROCESS = &H40
+Private Const WAIT_OBJECT_0 = 0
+Private Const SW_HIDE = 0
 
-' 狀態機變數（-1 未知、0 關、1 開）
-Private m_lastSeen As Integer   ' -1 unknown, 0 off, 1 on
-Private m_candidate As Integer  ' -1 unknown, 0 off, 1 on
+Private Const PH_IDLE As Integer = 0
+Private Const PH_WAIT_HDR As Integer = 1
+Private Const PH_WAIT_VERIFY As Integer = 2
+Private Const PH_WAIT_AFTER_CLEAN As Integer = 3
+
+Private m_lastSeen As Integer
+Private m_candidate As Integer
 Private m_stable As Long
+Private m_pending As Integer
+Private m_pendingDue As Long
+Private m_phase As Integer
 Private m_lastErr As String
-Private m_pending As Integer    ' -1 none, 0 off, 1 on
-Private m_pendingDue As Long    ' GetTickCount target
-Private m_phase As Integer      ' 0 initial delay, 1 verify wait
-Private m_busy As Boolean
 Private m_nid As NOTIFYICONDATA
 Private m_trayAdded As Boolean
+Private m_holdLogged As Boolean
 
-' 啟動：套語系選單文字、掛托盤圖示、開輪詢
 Private Sub Form_Load()
+    Me.ScaleMode = vbPixels
+    Me.Move -32000, -32000
+    Me.Show
+    Me.Refresh
+    
     mnuTray.Visible = False
     mnuAuto.Caption = S_MenuAuto()
+    mnuBalloon.Caption = S_MenuBalloon()
     mnuFireOff.Caption = S_MenuFireOff()
     mnuFireOn.Caption = S_MenuFireOn()
+    mnuHdrOn.Caption = S_MenuHdrOn()
+    mnuHdrOff.Caption = S_MenuHdrOff()
+    mnuClean.Caption = S_MenuClean()
+    mnuSettings.Caption = S_MenuSettings()
     mnuLog.Caption = S_MenuOpenLog()
-    mnuLogWin.Caption = S_MenuLogWin()
     mnuExit.Caption = S_MenuExit()
     mnuAuto.Checked = g_AutoOn
+    mnuBalloon.Checked = g_Balloon
     tmrPoll.Interval = g_PollSec * 1000
     tmrWait.Enabled = False
     m_lastSeen = -1
     m_candidate = -1
     m_stable = 0
     m_pending = -1
+    m_phase = PH_IDLE
     m_lastErr = ""
-    m_phase = 0
     LogMsg S_LogStart(g_PollSec, g_StableN, g_AutoOn)
-    TrayAdd
+    
+    Call InitTray(S_TipStarting())
+    Me.Hide
+    
     PollOnce
 End Sub
 
-' 布林轉 1/0（VB6 沒有三元運算子）
 Private Function PresentInt(ByVal present As Boolean) As Integer
     If present Then PresentInt = 1 Else PresentInt = 0
 End Function
 
-' 依通電或斷電取延遲秒數
-Private Function DelayOf(ByVal isOn As Boolean) As Long
-    If isOn Then DelayOf = g_PowerOn.DelaySec Else DelayOf = g_PowerOff.DelaySec
-End Function
-
-' 核心：查 WMI→去拖→穩定才認→轉換就排程
 Private Sub PollOnce()
     On Error GoTo Fail
-    Dim n As Long
+    Dim n As Long, sb As Long
     n = WmiPhysicalCount()
-    If g_WmiErr <> "" Then
-        If g_WmiErr <> m_lastErr Then
-            LogMsg S_LogWmiErr(g_WmiErr)
-            m_lastErr = g_WmiErr
+    sb = WmiStandbyCount()
+    If n = 0 And sb > 0 Then
+        TrayTip S_TipStandby()
+        If Not m_holdLogged Then
+            m_holdLogged = True
+            LogMsg S_LogHoldStandby(n, sb)
+            Call TrayBalloon(S_TipStandby(), S_LogHoldStandby(n, sb))
         End If
-    Else
-        m_lastErr = ""
+        Exit Sub
     End If
+    m_holdLogged = False
     Dim present As Boolean
     present = (n > 0)
     If m_candidate <> PresentInt(present) Then
@@ -166,116 +236,292 @@ Private Sub PollOnce()
     If m_lastSeen = PresentInt(present) Then Exit Sub
     m_lastSeen = PresentInt(present)
     LogMsg S_LogEvent(present, n)
+    Call TrayBalloon(S_TipState(present), S_LogEvent(present, n))
     If Not g_AutoOn Then Exit Sub
-    m_pending = PresentInt(present)
-    m_pendingDue = GetTickCount() + DelayOf(present) * 1000
-    m_phase = 0
-    tmrWait.Enabled = True
-    If present Then LogMsg S_LogPlanOn(DelayOf(True)) Else LogMsg S_LogPlanOff(DelayOf(False))
+    If present Then
+        If Not g_PowerOn.Enabled Then LogMsg S_LogDirDisabled(True): Exit Sub
+    Else
+        If Not g_PowerOff.Enabled Then LogMsg S_LogDirDisabled(False): Exit Sub
+    End If
+    StartTransition present
     Exit Sub
 Fail:
     LogMsg S_LogPollErr(Err.Description)
 End Sub
 
-' 輪詢節拍
+' 開始一輪：先等 DelayHDR
+Private Sub StartTransition(ByVal wantOn As Boolean)
+    Dim cfg As TransCfg
+    If wantOn Then cfg = g_PowerOn Else cfg = g_PowerOff
+    m_pending = PresentInt(wantOn)
+    m_pendingDue = GetTickCount() + cfg.DelayHDR * 1000
+    m_phase = PH_WAIT_HDR
+    tmrWait.Enabled = True
+    LogMsg S_LogPlanHdr(wantOn, cfg.DelayHDR)
+End Sub
+
 Private Sub tmrPoll_Timer()
     PollOnce
 End Sub
 
-' 判斷延遲時間到（可承受計時器 49 天迴轉）
 Private Function TickPassed(ByVal due As Long) As Boolean
     TickPassed = (GetTickCount() - due >= 0)
 End Function
 
-' 延遲節拍：時間到先重驗狀態，變了就跳過
 Private Sub tmrWait_Timer()
-    If m_pending = -1 Then tmrWait.Enabled = False: Exit Sub
-    If m_busy Then Exit Sub
-    If Not TickPassed(m_pendingDue) Then Exit Sub
-    Dim wantOn As Boolean
-    wantOn = (m_pending = 1)
-    If m_lastSeen <> PresentInt(wantOn) Then
-        m_pending = -1
+    If m_pending = -1 Or m_phase = PH_IDLE Then
         tmrWait.Enabled = False
         Exit Sub
     End If
-    m_busy = True
-    If m_phase = 0 Then
-        If wantOn Then
-            StepShell True
-            StepNative True
-            m_phase = 1
-            m_pendingDue = GetTickCount() + g_VerifySec * 1000
-            LogMsg S_LogVerifyWait(g_VerifySec)
-        Else
-            DoPowerAction False
-            m_pending = -1
-            tmrWait.Enabled = False
-        End If
-    Else
-        If m_pending <> 1 Then
-            m_pending = -1
-            tmrWait.Enabled = False
-        ElseIf CheckOn() Then
-            LogMsg S_LogVerified()
-            m_pending = -1
-            tmrWait.Enabled = False
-        Else
-            LogMsg S_LogVerifyFail()
-            If g_CleanOnFail Then
-                StepClean
-                LogMsg S_LogRetry()
-                StepNative True
-            End If
-            m_pending = -1
-            tmrWait.Enabled = False
-        End If
+    If Not TickPassed(m_pendingDue) Then Exit Sub
+
+    Dim wantOn As Boolean
+    wantOn = (m_pending = 1)
+    If m_lastSeen <> PresentInt(wantOn) Then
+        LogMsg S_LogSkip(wantOn)
+        FinishPhase
+        Exit Sub
     End If
-    m_busy = False
+
+    Select Case m_phase
+        Case PH_WAIT_HDR
+            Call DoHdrStep(wantOn)
+        Case PH_WAIT_VERIFY
+            Call DoVerifyStep(wantOn)
+        Case PH_WAIT_AFTER_CLEAN
+            Call DoRetryHdrAfterClean(wantOn)
+    End Select
 End Sub
 
-' 執行斷電或通電命令並記結果
+' HDR 段：有設定才做；通電可進入驗證
+' 通電／斷電同一套：HDR 動作 → 可選驗證 → 失敗可清卡再試 → Shell
+Private Sub DoHdrStep(ByVal wantOn As Boolean)
+    On Error GoTo Fail
+    Dim cfg As TransCfg
+    If wantOn Then cfg = g_PowerOn Else cfg = g_PowerOff
+    
+    If cfg.NativeHDR = "on" Or cfg.NativeHDR = "off" Then
+        Dim ok As Boolean, st As HDR_STATUS
+        If cfg.NativeHDR = "on" Then
+            LogMsg S_LogNativeTryOn()
+            ok = HDR_Enable()
+        Else
+            LogMsg S_LogNativeTryOff()
+            ok = HDR_Disable()
+        End If
+        st = HDR_GetStatus(0)
+        LogMsg S_LogNativeResult(ok, st)
+        If cfg.NativeHDR = "off" And (st = HDR_UNSUPPORTED Or st = HDR_ERROR Or st = HDR_STATUS_UNKNOWN) Then
+            LogMsg S_LogNativeOffNoPath()
+        End If
+        ' 兩邊都可驗證（VerifySeconds>0）
+        If cfg.VerifySeconds > 0 Then
+            LogMsg S_LogVerifyWait(cfg.VerifySeconds)
+            m_pendingDue = GetTickCount() + cfg.VerifySeconds * 1000
+            m_phase = PH_WAIT_VERIFY
+            Exit Sub
+        End If
+    Else
+        LogMsg S_LogNativeSkip()
+    End If
+    
+    Call DoShellStep(wantOn)
+    Exit Sub
+Fail:
+    LogMsg S_LogAutoErr(Err.Description)
+    FinishPhase
+End Sub
 
-' 選單：自動切換開關
+Private Function HdrVerifyOk(ByRef cfg As TransCfg, ByVal st As HDR_STATUS) As Boolean
+    ' on → 必須 ON；off → 必須 OFF（UNSUPPORTED 不算通過，可走清卡重試）
+    If cfg.NativeHDR = "on" Then
+        HdrVerifyOk = (st = HDR_ON)
+    ElseIf cfg.NativeHDR = "off" Then
+        HdrVerifyOk = (st = HDR_OFF)
+    Else
+        HdrVerifyOk = True
+    End If
+End Function
+
+Private Sub DoVerifyStep(ByVal wantOn As Boolean)
+    On Error GoTo Fail
+    Dim cfg As TransCfg, st As HDR_STATUS
+    If wantOn Then cfg = g_PowerOn Else cfg = g_PowerOff
+    st = HDR_GetStatus(0)
+    If HdrVerifyOk(cfg, st) Then
+        LogMsg S_LogVerifyOk()
+        Call DoShellStep(wantOn)
+        Exit Sub
+    End If
+    LogMsg S_LogVerifyFail()
+    If cfg.CleanHelper Then
+        Dim crc As Long
+        crc = RunCleanElevated()
+        LogMsg S_LogCleanDone(crc)
+        If cfg.DelayAfterClean > 0 Then
+            LogMsg S_LogWaitAfterClean(cfg.DelayAfterClean)
+            m_pendingDue = GetTickCount() + cfg.DelayAfterClean * 1000
+            m_phase = PH_WAIT_AFTER_CLEAN
+            Exit Sub
+        Else
+            Call DoRetryHdrAfterClean(wantOn)
+            Exit Sub
+        End If
+    End If
+    Call DoShellStep(wantOn)
+    Exit Sub
+Fail:
+    LogMsg S_LogAutoErr(Err.Description)
+    FinishPhase
+End Sub
+
+Private Sub DoRetryHdrAfterClean(ByVal wantOn As Boolean)
+    On Error GoTo Fail
+    Dim cfg As TransCfg, ok As Boolean
+    If wantOn Then cfg = g_PowerOn Else cfg = g_PowerOff
+    LogMsg S_LogRetryEnable()
+    If cfg.NativeHDR = "on" Then
+        ok = HDR_Enable()
+    ElseIf cfg.NativeHDR = "off" Then
+        ok = HDR_Disable()
+    Else
+        ok = False
+    End If
+    LogMsg S_LogNativeResult(ok, HDR_GetStatus(0))
+    Call DoShellStep(wantOn)
+    Exit Sub
+Fail:
+    LogMsg S_LogAutoErr(Err.Description)
+    FinishPhase
+End Sub
+
+Private Sub DoShellStep(ByVal wantOn As Boolean)
+    On Error GoTo Fail
+    Dim cfg As TransCfg, rc As Long
+    If wantOn Then cfg = g_PowerOn Else cfg = g_PowerOff
+    If Len(Trim$(cfg.Shell)) = 0 Then
+        LogMsg S_LogShellSkipEmpty()
+    ElseIf Not ShellTargetExists(cfg.Shell) Then
+        LogMsg S_LogShellSkipMissing(cfg.Shell)
+    Else
+        rc = ShellRunHidden(cfg.Shell, g_WorkDir)
+        LogMsg S_LogShellRun(rc)
+    End If
+    Call TrayBalloon(S_TipState(wantOn), S_LogPhaseDone(wantOn))
+    LogMsg S_LogPhaseDone(wantOn)
+    FinishPhase
+    Exit Sub
+Fail:
+    LogMsg S_LogAutoErr(Err.Description)
+    FinishPhase
+End Sub
+
+Private Sub FinishPhase()
+    m_pending = -1
+    m_phase = PH_IDLE
+    tmrWait.Enabled = False
+End Sub
+
+Private Function RunCleanElevated() As Long
+    On Error GoTo Fail
+    Dim sei As SHELLEXECUTEINFO
+    Dim exe As String, wr As Long, rc As Long, waited As Long
+    exe = App.Path
+    If Right$(exe, 1) <> "\" Then exe = exe & "\"
+    exe = exe & App.EXEName & ".exe"
+    With sei
+        .cbSize = Len(sei)
+        .fMask = SEE_MASK_NOCLOSEPROCESS
+        .hwnd = Me.hwnd
+        .lpVerb = "runas"
+        .lpFile = exe
+        .lpParameters = "--clean"
+        .lpDirectory = App.Path
+        .nShow = SW_HIDE
+    End With
+    LogMsg S_LogCleanElevate()
+    If ShellExecuteEx(sei) = 0 Then
+        LogMsg S_LogCleanElevateFail(0)
+        RunCleanElevated = 5
+        Exit Function
+    End If
+    If sei.hProcess = 0 Then RunCleanElevated = 0: Exit Function
+    waited = 0
+    Do
+        wr = WaitForSingleObject(sei.hProcess, 500)
+        If wr = WAIT_OBJECT_0 Then Exit Do
+        DoEvents
+        waited = waited + 500
+    Loop While waited < 120000
+    If wr = WAIT_OBJECT_0 Then GetExitCodeProcess sei.hProcess, rc Else rc = -1
+    CloseHandle sei.hProcess
+    RunCleanElevated = rc
+    Exit Function
+Fail:
+    LogMsg S_LogCleanErr(Err.Description)
+    RunCleanElevated = 1
+End Function
+
 Private Sub mnuAuto_Click()
     mnuAuto.Checked = Not mnuAuto.Checked
     g_AutoOn = mnuAuto.Checked
     LogMsg S_LogAutoToggle(g_AutoOn)
 End Sub
 
-' 選單：立即執行斷電命令（不等延遲）
+Private Sub mnuBalloon_Click()
+    mnuBalloon.Checked = Not mnuBalloon.Checked
+    g_Balloon = mnuBalloon.Checked
+    Call ConfigSave
+    LogMsg S_LogBalloonToggle(g_Balloon)
+End Sub
+
 Private Sub mnuFireOff_Click()
-    FireNow False
+    LogMsg S_LogManual(False)
+    StartTransition False
 End Sub
 
-' 選單：立即執行通電命令（不等延遲）
 Private Sub mnuFireOn_Click()
-    FireNow True
+    LogMsg S_LogManual(True)
+    StartTransition True
 End Sub
 
-' 立即執行本體（500 毫秒讓步一次）
-Private Sub FireNow(ByVal wantOn As Boolean)
-    Call DoPowerAction(wantOn)
-End Sub
-
-' 選單：開紀錄檔
-Private Sub mnuLog_Click()
-    OpenLogFolder
-End Sub
-Private Sub mnuLogWin_Click()
-    On Error GoTo Fail
-    Load frmLog
-    frmLog.Show vbModeless
-    frmLog.ZOrder 0
+Private Sub mnuHdrOn_Click()
     On Error Resume Next
-    frmLog.SetFocus
-    Exit Sub
-Fail:
-    LogMsg S_LogAutoErr(Err.Description)
+    Dim ok As Boolean
+    LogMsg S_LogHdrManual(True)
+    ok = HDR_Enable()
+    LogMsg S_LogNativeResult(ok, HDR_GetStatus(0))
 End Sub
 
-' 用檔案總管選取紀錄檔
-Private Sub OpenLogFolder()
+Private Sub mnuHdrOff_Click()
+    On Error Resume Next
+    Dim ok As Boolean
+    LogMsg S_LogHdrManual(False)
+    ok = HDR_Disable()
+    LogMsg S_LogNativeResult(ok, HDR_GetStatus(0))
+End Sub
+
+Private Sub mnuClean_Click()
+    On Error Resume Next
+    Dim crc As Long
+    LogMsg S_LogCleanStart()
+    crc = RunCleanElevated()
+    LogMsg S_LogCleanDone(crc)
+End Sub
+
+Private Sub mnuSettings_Click()
+    OpenSettings 0
+End Sub
+
+Public Sub OpenSettings(ByVal tabIdx As Integer)
+    On Error Resume Next
+    frmSettings.ShowTab tabIdx
+    frmSettings.Show
+    frmSettings.WindowState = vbNormal
+    frmSettings.SetFocus
+End Sub
+
+Private Sub mnuLog_Click()
     On Error GoTo Fail
     ShellExecute Me.hwnd, "open", "explorer.exe", "/select,""" & g_LogFile & """", "", SW_SHOWNORMAL
     Exit Sub
@@ -283,52 +529,104 @@ Fail:
     LogMsg S_LogOpenLogErr(Err.Description)
 End Sub
 
-' 選單：結束（先拔托盤圖示再卸載窗體）
 Private Sub mnuExit_Click()
     TrayRemove
     LogMsg S_LogExit()
+    On Error Resume Next
+    Unload frmSettings
     Unload Me
+    End
 End Sub
 
-' 把圖示掛上通知區域
-Private Sub TrayAdd()
+Private Sub InitTray(ByVal MouseMoveTip As String)
+    Dim hIco As Long
+    On Error Resume Next
+    hIco = 0
+    hIco = Me.Icon.Handle
+    If hIco = 0 Then hIco = CLng(Me.Icon)
+    If hIco = 0 Then hIco = LoadIcon(0, IDI_APPLICATION)
+    On Error GoTo 0
+
     With m_nid
         .cbSize = Len(m_nid)
         .hwnd = Me.hwnd
-        .uID = 1
-        .uFlags = NIF_MESSAGE Or NIF_ICON Or NIF_TIP
-        .uCallbackMessage = WM_USER + 1
-        .hIcon = LoadIcon(0, IDI_APPLICATION)
-        .szTip = S_TipStarting() & vbNullChar
+        .uId = 19791229
+        .uFlags = NIF_ICON Or NIF_TIP Or NIF_MESSAGE
+        .uCallBackMessage = WM_MOUSEMOVE
+        .hIcon = hIco
+        .szTip = left$(MouseMoveTip & String$(127, vbNullChar), 127) & vbNullChar
+        .dwState = 0
+        .dwStateMask = 0
+        .szInfo = vbNullChar
+        .uTimeoutOrVersion = 0
+        .szInfoTitle = vbNullChar
+        .dwInfoFlags = 0
     End With
-    m_trayAdded = (Shell_NotifyIcon(NIM_ADD, m_nid) <> 0)
+    m_trayAdded = (Shell_NotifyIconA(NIM_ADD, m_nid) <> 0)
+    If Not m_trayAdded Then
+        LogMsg "TrayAdd failed hwnd=" & Me.hwnd
+    End If
 End Sub
 
-' 更新圖示提示文字
 Private Sub TrayTip(ByVal txt As String)
+    Dim tip As String
     If Not m_trayAdded Then Exit Sub
-    m_nid.szTip = txt & vbNullChar
-    Shell_NotifyIcon NIM_MODIFY, m_nid
+    tip = txt
+    If Len(tip) > 127 Then tip = left$(tip, 127)
+    m_nid.szTip = tip & vbNullChar
+    m_nid.uFlags = NIF_ICON Or NIF_TIP Or NIF_MESSAGE
+    Shell_NotifyIconA NIM_MODIFY, m_nid
 End Sub
 
-' 把圖示拔掉（結束前必做，否則圖示殘留）
 Private Sub TrayRemove()
     If m_trayAdded Then
-        Shell_NotifyIcon NIM_DELETE, m_nid
+        Shell_NotifyIconA NIM_DELETE, m_nid
         m_trayAdded = False
     End If
 End Sub
 
-' 托盤回呼：右鍵彈選單，雙擊開紀錄檔
 Private Sub Form_MouseMove(Button As Integer, Shift As Integer, X As Single, Y As Single)
     Dim msg As Long
     If Not m_trayAdded Then Exit Sub
-    msg = X / Screen.TwipsPerPixelX
-    If msg = WM_RBUTTONUP Then
-        ' 先搶前景，否則選單點了沒反應（VB6 托盤老坑）
-        SetForegroundWindow Me.hwnd
-        PopupMenu mnuTray
-    ElseIf msg = WM_LBUTTONDBLCLK Then
-        OpenLogFolder
+
+    If Me.ScaleMode = vbPixels Then
+        msg = X
+    Else
+        msg = X / Screen.TwipsPerPixelX
     End If
+
+    Select Case msg
+        Case WM_RBUTTONUP
+            Call ShowTrayMenu
+        Case WM_LBUTTONUP
+            Call OpenSettings(0)
+        Case WM_LBUTTONDBLCLK
+            Call OpenSettings(0)
+    End Select
+End Sub
+
+Private Sub ShowTrayMenu()
+    On Error Resume Next
+    Call SetForegroundWindow(Me.hwnd)
+    Call PopupMenu(mnuTray)
+    Call PostMessage(Me.hwnd, WM_NULL, 0, 0)
+End Sub
+
+
+Private Sub Form_Unload(Cancel As Integer)
+    TrayRemove
+End Sub
+
+Private Sub TrayBalloon(ByVal tipTitle As String, ByVal tipText As String)
+    If Not g_Balloon Then Exit Sub
+    If Not m_trayAdded Then Exit Sub
+    On Error Resume Next
+    With m_nid
+        .uFlags = NIF_ICON Or NIF_TIP Or NIF_MESSAGE Or NIF_INFO
+        .szInfoTitle = Left$(tipTitle & String$(63, vbNullChar), 63) & vbNullChar
+        .szInfo = Left$(tipText & String$(255, vbNullChar), 255) & vbNullChar
+        .dwInfoFlags = NIIF_INFO
+        .uTimeoutOrVersion = 10
+    End With
+    Call Shell_NotifyIconA(NIM_MODIFY, m_nid)
 End Sub

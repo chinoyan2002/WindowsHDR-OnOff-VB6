@@ -1,19 +1,21 @@
-' ï¿½ï¿½ï¿½Ò²Õ¡Gï¿½{ï¿½ï¿½ï¿½iï¿½Jï¿½Iï¿½]ï¿½ï¿½ï¿½ C# ï¿½ï¿½ Program.Mainï¿½^
+Attribute VB_Name = "modMain"
+' ¥»¼Ò²Õ¡Gµ{¦¡¶i¤JÂI¡]¹ï·Ó C# ª© Program.Main¡^
 Option Explicit
 
-' ï¿½Hï¿½Uï¿½Gï¿½ï¿½ï¿½ï¿½ï¿½Pï¿½Û­qï¿½ï¿½ï¿½ï¿½ï¿½Xï¿½Îªï¿½ï¿½tï¿½Î¨ç¦¡
-Private Declare Function CreateMutexA Lib "kernel32" Alias "CreateMutexA" (ByVal lpAttr As Long, ByVal bInit As Long, ByVal lpName As String) As Long
 Private Declare Sub ExitProcess Lib "kernel32" (ByVal uCode As Long)
+Private Declare Function ShellExecuteA Lib "shell32" (ByVal hwnd As Long, ByVal lpOp As String, ByVal lpFile As String, ByVal lpParam As String, ByVal lpDir As String, ByVal nShow As Long) As Long
 
-Private Const ERROR_ALREADY_EXISTS = 183&
+Private Const SW_HIDE = 0
 
-' ï¿½iï¿½Jï¿½Iï¿½GÅªï¿½]ï¿½wï¿½ï¿½ï¿½wï¿½yï¿½tï¿½ï¿½ï¿½ï¿½ï¿½Rï¿½Oï¿½Cï¿½Ñ¼Æ´Nï¿½ï¿½Æ°hï¿½Xï¿½Aï¿½_ï¿½hï¿½ï¿½ï¿½Jï¿½ï¿½ï¿½Lï¿½`ï¿½n
-Public Sub Main()
+' ©R¥O¦C¼Ò¦¡¡G­Y¦³ --xxx «h³B²z§¹µ²§ô¨Ã¦^ True¡]©I¥sºÝ¤Å¦A¶] GUI¡^
+' ¥¿±` GUI ±Ò°Ê½Ð¥H frmSettings ¬° Startup¡A¦b Form_Load ©I¥s AppBootstrap
+Public Function AppBootstrap() As Boolean
     Dim args As String
     args = LCase$(Trim$(Command$))
     ConfigLoad
     LangInit g_Language
     LogInit g_LogDir
+
     If args = "--install-autostart" Then
         If AutostartSet(True) Then ExitProcess 0 Else ExitProcess 1
     ElseIf args = "--remove-autostart" Then
@@ -25,114 +27,212 @@ Public Sub Main()
     ElseIf args = "--fire-on" Then
         ExitProcess FireCli(True)
     ElseIf args = "--clean" Then
-        ExitProcess CleanMode(False)
-    ElseIf args = "--clean-elevated" Then
-        ExitProcess CleanMode(True)
-    ElseIf args = "--test-admin" Then
-        ExitProcess TestAdmin()
+        ExitProcess CleanCli()
     End If
-    Dim hM As Long
-    hM = CreateMutexA(0, 0, "Global\AutoHdrMode")
-    If Err.LastDllError = ERROR_ALREADY_EXISTS Then ExitProcess 0
-    Load frmTray
+
+    If App.PrevInstance Then
+        MsgBox "¦b®à­±¥k¤U¨¤¤w°õ¦æ!!", vbSystemModal + vbMsgBoxSetForeground
+        ExitProcess 0
+    End If
+
+    ' False = Ä~Äò GUI¡]¥Dµ¡Åé¤w¬O Startup¡^
+    AppBootstrap = False
+End Function
+
+' «O¯d Sub Main ¶È¨Ñ¤â°Ê§ï¦^ Startup=Sub Main ®É¬Û®e¡F¥¿¦¡¥H frmSettings ±Ò°Ê
+Public Sub Main()
+    ' ¥¿¦¡ Startup ¬° frmSettings¡F¦¹³B¶È¨Ñ¤â°Ê§ï¦^ Sub Main ©Î¯Â CLI¡C
+    ' ¤Å»P frmSettings.Form_Load ªº AppBootstrap / Load frmTray ­«½Æ¨Ã¥Î¡C
+    If AppBootstrap() Then Exit Sub
+    Load frmSettings
+    If Not g_FirstRun Then frmSettings.Hide
 End Sub
 
-' --probeï¿½Gï¿½uï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ê§@ï¿½]0 ï¿½}ï¿½B1 ï¿½ï¿½ï¿½B2 ï¿½ï¿½ï¿½ï¿½ï¿½^
-Private Function ProbeRun() As Long
-    Dim n As Long
-    n = WmiPhysicalCount()
-    LogMsg S_LogProbe(n)
-    If n > 0 Then
-        ProbeRun = 0
-    ElseIf n = 0 Then
-        ProbeRun = 1
-    Else
-        ProbeRun = 2
-    End If
-End Function
-
-' --fire-off/onï¿½Gï¿½ï¿½ï¿½ï¿½ï¿½]ï¿½Rï¿½Oï¿½]ï¿½ï¿½ï¿½Õ¥Î¡Aï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½^
-Private Function FireCli(ByVal wantOn As Boolean) As Long
+' --clean¡G´£Åv²MµêÀÀ¥d¡C«D admin ´N runas ¦Û¤v¡A°µ§¹°h¥X¡C
+Private Function CleanCli() As Long
     On Error GoTo Fail
-    Dim r1 As Long, r2 As Long, finalRc As Long
-    If Not wantOn Then
-        FireCli = DoPowerAction(False)
-        Exit Function
-    End If
-    r1 = StepShell(True)
-    r2 = StepNative(True)
-    If r1 = 3 And r2 = 3 Then
-        LogMsg S_LogEmptyOn()
-        FireCli = 3
-        Exit Function
-    End If
-    If r2 = 3 Then
-        If r1 = 3 Then FireCli = 3 Else FireCli = 0
-        Exit Function
-    End If
-    SleepMs g_VerifySec * 1000
-    If CheckOn() Then
-        LogMsg S_LogVerified()
-        FireCli = 0
-        Exit Function
-    End If
-    LogMsg S_LogVerifyFail()
-    If g_CleanOnFail Then
-        StepClean
-        LogMsg S_LogRetry()
-        r2 = StepNative(True)
-    End If
-    finalRc = 0
-    If r1 <> 0 And r1 <> 3 Then finalRc = r1
-    If r2 <> 0 And r2 <> 3 Then finalRc = r2
-    FireCli = finalRc
-    Exit Function
-Fail:
-    LogMsg S_LogAutoErr(Err.Description)
-    FireCli = 4
-End Function
-
-Private Function CleanMode(ByVal noRelaunch As Boolean) As Long
-    On Error GoTo Fail
-    If IsAdmin() Then
-        CleanMode = CleanVirtualDisplays()
-    ElseIf noRelaunch Then
-        LogMsg S_LogCleanErr("already-elevated-child refused relaunch (fork guard)")
-        CleanMode = 6
-    Else
-        Dim exe As String
+    If Not IsElevated() Then
+        LogMsg S_LogCleanElevate()
+        Dim exe As String, rc As Long
         exe = App.Path
         If Right$(exe, 1) <> "\" Then exe = exe & "\"
         exe = exe & App.EXEName & ".exe"
-        CleanMode = ShellRunElevated(exe, "--clean-elevated", g_WorkDir)
+        rc = ShellExecuteA(0, "runas", exe, "--clean", App.Path, SW_HIDE)
+        If rc > 32 Then
+            CleanCli = 0
+        Else
+            LogMsg S_LogCleanElevateFail(rc)
+            CleanCli = 5
+        End If
+        Exit Function
     End If
+    CleanCli = CleanVirtualGpus()
     Exit Function
 Fail:
     LogMsg S_LogCleanErr(Err.Description)
-    CleanMode = 2
+    CleanCli = 1
 End Function
 
-Private Function TestAdmin() As Long
-    On Error GoTo Fail
-    If IsAdmin() Then
-        LogMsg "ADMIN-TEST: elevated=True " & IsAdminDiag()
-        TestAdmin = 0
+Private Function ProbeRun() As Long
+    Dim n As Long, sb As Long
+    n = WmiPhysicalCount()
+    sb = WmiStandbyCount()
+    LogMsg S_LogProbe(n, sb)
+    If n > 0 Then
+        ProbeRun = 0
+    ElseIf sb > 0 Then
+        ProbeRun = 3
     Else
-        LogMsg "ADMIN-TEST: elevated=False " & IsAdminDiag()
-        TestAdmin = 1
+        ProbeRun = 1
     End If
+End Function
+
+' --fire-off/on¡G§¹¾ã¬yµ{¡]³q¹q§tÅçÃÒ¡Ï¥i¿ï²M¥d¡^
+Private Function FireCli(ByVal wantOn As Boolean) As Long
+    ' CLI¡G»P GUI ¬Û¦P¡]DelayHDR ¡÷ HDR ¡÷ ÅçÃÒ ¡÷ ¥i¿ï²M¥d­«¸Õ ¡÷ Shell¡^
+    On Error GoTo Fail
+    Dim cfg As TransCfg
+    Dim ok As Boolean
+    Dim st As HDR_STATUS
+    Dim crc As Long
+    Dim i As Long
+    Dim t0 As Single
+    Dim rc As Long
+
+    If wantOn Then cfg = g_PowerOn Else cfg = g_PowerOff
+
+    ' DelayHDR
+    If cfg.DelayHDR > 0 Then
+        LogMsg S_LogPlanHdr(wantOn, cfg.DelayHDR)
+        For i = 1 To cfg.DelayHDR
+            t0 = Timer
+            Do While Timer < t0 + 1
+                DoEvents
+            Loop
+        Next
+    End If
+
+    If cfg.NativeHDR = "on" Or cfg.NativeHDR = "off" Then
+        If cfg.NativeHDR = "on" Then
+            LogMsg S_LogNativeTryOn()
+            ok = HDR_Enable()
+        Else
+            LogMsg S_LogNativeTryOff()
+            ok = HDR_Disable()
+        End If
+        st = HDR_GetStatus(0)
+        LogMsg S_LogNativeResult(ok, st)
+        If cfg.NativeHDR = "off" And (st = HDR_UNSUPPORTED Or st = HDR_ERROR Or st = HDR_STATUS_UNKNOWN) Then
+            LogMsg S_LogNativeOffNoPath()
+        End If
+
+        If cfg.VerifySeconds > 0 Then
+            LogMsg S_LogVerifyWait(cfg.VerifySeconds)
+            For i = 1 To cfg.VerifySeconds
+                t0 = Timer
+                Do While Timer < t0 + 1
+                    DoEvents
+                Loop
+            Next
+            st = HDR_GetStatus(0)
+            ok = False
+            If cfg.NativeHDR = "on" Then
+                ok = (st = HDR_ON)
+            ElseIf cfg.NativeHDR = "off" Then
+                ok = (st = HDR_OFF)
+            End If
+            If ok Then
+                LogMsg S_LogVerifyOk()
+            Else
+                LogMsg S_LogVerifyFail()
+                If cfg.CleanHelper Then
+                    crc = CleanCli()
+                    LogMsg S_LogCleanDone(crc)
+                    If cfg.DelayAfterClean > 0 Then
+                        LogMsg S_LogWaitAfterClean(cfg.DelayAfterClean)
+                        For i = 1 To cfg.DelayAfterClean
+                            t0 = Timer
+                            Do While Timer < t0 + 1
+                                DoEvents
+                            Loop
+                        Next
+                    End If
+                    LogMsg S_LogRetryEnable()
+                    If cfg.NativeHDR = "on" Then
+                        ok = HDR_Enable()
+                    Else
+                        ok = HDR_Disable()
+                    End If
+                    LogMsg S_LogNativeResult(ok, HDR_GetStatus(0))
+                End If
+            End If
+        End If
+    Else
+        LogMsg S_LogNativeSkip()
+    End If
+
+    If Len(Trim$(cfg.Shell)) = 0 Then
+        LogMsg S_LogShellSkipEmpty()
+    ElseIf Not ShellTargetExists(cfg.Shell) Then
+        LogMsg S_LogShellSkipMissing(cfg.Shell)
+    Else
+        rc = ShellRunHidden(cfg.Shell, g_WorkDir)
+        LogMsg S_LogShellRun(rc)
+    End If
+
+    LogMsg S_LogPhaseDone(wantOn)
+    FireCli = 0
     Exit Function
 Fail:
     LogMsg S_LogAutoErr(Err.Description)
-    TestAdmin = 2
+    FireCli = 1
 End Function
 
-' --install/remove-autostartï¿½Gï¿½g HKCU ï¿½}ï¿½ï¿½ï¿½Ò°ï¿½
-Private Function AutostartSet(ByVal install As Boolean) As Boolean
+' ¦@¥Î¡G°õ¦æ¤@¦¸³q¹q©ÎÂ_¹q¡]NativeHDR Àu¥ý¡A§_«h¡þ¥t¥~¶] Shell¡^
+Public Sub FireTransitionCore(ByVal wantOn As Boolean, Optional ByVal fromCli As Boolean = False)
+    ' CLI / ¬Û®e¤J¤f¡G¦P¨B¶] HDR + Shell¡]¤£§t²M¥dª¬ºA¾÷¡^
+    On Error GoTo Fail
+    Dim cfg As TransCfg, ok As Boolean, st As HDR_STATUS, rc As Long
+    If wantOn Then cfg = g_PowerOn Else cfg = g_PowerOff
+    If cfg.NativeHDR = "on" Or cfg.NativeHDR = "off" Then
+        If cfg.NativeHDR = "on" Then
+            LogMsg S_LogNativeTryOn()
+            ok = HDR_Enable()
+        Else
+            LogMsg S_LogNativeTryOff()
+            ok = HDR_Disable()
+        End If
+        st = HDR_GetStatus(0)
+        LogMsg S_LogNativeResult(ok, st)
+    End If
+    If Len(Trim$(cfg.Shell)) = 0 Then
+        LogMsg S_LogShellSkipEmpty()
+    ElseIf Not ShellTargetExists(cfg.Shell) Then
+        LogMsg S_LogShellSkipMissing(cfg.Shell)
+    Else
+        rc = ShellRunHidden(cfg.Shell, g_WorkDir)
+        LogMsg S_LogShellRun(rc)
+    End If
+    Exit Sub
+Fail:
+    LogMsg S_LogAutoErr(Err.Description)
+End Sub
+
+Public Function AutostartInstalled() As Boolean
+    On Error Resume Next
+    Dim ws As Object, key As String, cur As String
+    Set ws = CreateObject("WScript.Shell")
+    key = "HKCU\Software\Microsoft\Windows\CurrentVersion\Run\AutoHdrMode"
+    cur = ws.RegRead(key)
+    AutostartInstalled = (Err.Number = 0 And Len(cur) > 0)
+    Err.Clear
+End Function
+
+Public Function AutostartSet(ByVal install As Boolean) As Boolean
     On Error GoTo Fail
     Dim ws As Object, key As String, exe As String
     Set ws = CreateObject("WScript.Shell")
-    key = "HKCU\Software\Microsoft\Windows\CurrentVersion\Run\AutoHdrMode\"
+    key = "HKCU\Software\Microsoft\Windows\CurrentVersion\Run\AutoHdrMode"
     exe = App.Path
     If Right$(exe, 1) <> "\" Then exe = exe & "\"
     exe = """" & exe & App.EXEName & ".exe" & """"

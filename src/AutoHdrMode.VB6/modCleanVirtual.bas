@@ -1,124 +1,188 @@
+Attribute VB_Name = "modCleanVirtual"
+' 本模組：清除虛擬顯示卡（pnputil），僅在通電且需要時由提權 --clean 模式呼叫
+' 邏輯：AMD/NVIDIA/Intel 以外全砍 + 45 秒驗證迴圈
 Option Explicit
 
-' 本模組：清除遠端軟體虛擬顯示卡（邏輯對照 SetHDR.ps1，VB6 實作）
-' 只在提權後的 --clean 行程內執行；回傳 0=已清空或本來就沒有、1=逾時仍有殘留、2=執行錯誤
+Private Type STARTUPINFO
+    cb As Long
+    lpReserved As String
+    lpDesktop As String
+    lpTitle As String
+    dwX As Long
+    dwY As Long
+    dwXSize As Long
+    dwYSize As Long
+    dwXCountChars As Long
+    dwYCountChars As Long
+    dwFillAttribute As Long
+    dwFlags As Long
+    wShowWindow As Integer
+    cbReserved2 As Integer
+    lpReserved2 As Long
+    hStdInput As Long
+    hStdOutput As Long
+    hStdError As Long
+End Type
 
-Private Declare Function GetTickCount Lib "kernel32" () As Long
+Private Type PROCESS_INFORMATION
+    hProcess As Long
+    hThread As Long
+    dwProcessId As Long
+    dwThreadId As Long
+End Type
+
+Private Declare Function CreateProcessA Lib "kernel32" (ByVal lpApp As String, ByVal lpCmd As String, ByVal lpProcAttr As Long, ByVal lpThreadAttr As Long, ByVal bInherit As Long, ByVal dwFlags As Long, ByVal lpEnv As Long, ByVal lpDir As String, lpStart As STARTUPINFO, lpProc As PROCESS_INFORMATION) As Long
+Private Declare Function WaitForSingleObject Lib "kernel32" (ByVal hHandle As Long, ByVal dwMs As Long) As Long
+Private Declare Function GetExitCodeProcess Lib "kernel32" (ByVal hProcess As Long, lpCode As Long) As Long
+Private Declare Function CloseHandle Lib "kernel32" (ByVal hObject As Long) As Long
 Private Declare Sub Sleep Lib "kernel32" (ByVal dwMilliseconds As Long)
+Private Declare Function OpenProcessToken Lib "advapi32" (ByVal ProcessHandle As Long, ByVal DesiredAccess As Long, TokenHandle As Long) As Long
+Private Declare Function GetTokenInformation Lib "advapi32" (ByVal TokenHandle As Long, ByVal TokenInformationClass As Long, TokenInformation As Any, ByVal TokenInformationLength As Long, ReturnLength As Long) As Long
+Private Declare Function GetCurrentProcess Lib "kernel32" () As Long
 
-' 清除虛擬顯示卡主函數（含 45 秒驗證迴圈）
-Public Function CleanVirtualDisplays() As Long
+Private Const CREATE_NO_WINDOW = &H8000000
+Private Const STARTF_USESHOWWINDOW = &H1
+Private Const SW_HIDE = 0
+Private Const WAIT_OBJECT_0 = 0
+Private Const TOKEN_QUERY As Long = &H8
+Private Const TokenElevation As Long = 20
+
+' 是否以系統管理員執行
+Public Function IsElevated() As Boolean
     On Error GoTo Fail
-    Dim ids() As String, names() As String, n As Long
-    Dim i As Long, t0 As Long, ok As Boolean, targets As Long
-    If Not EnumAdapters(ids, names, n) Then
-        LogMsg S_LogCleanErr("enum")
-        CleanVirtualDisplays = 2
+    Dim hToken As Long, elev As Long, retLen As Long
+    If OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, hToken) = 0 Then
+        IsElevated = False
         Exit Function
     End If
-    targets = 0
-    For i = 0 To n - 1
-        If IsVirtualAdapter(names(i)) Then
-            targets = targets + 1
-            LogMsg S_LogCleanRemoving(names(i))
-            ShellRunHidden "pnputil.exe /remove-device """ & ids(i) & """", g_WorkDir
-            Sleep 1000
-        End If
+    elev = 0
+    If GetTokenInformation(hToken, TokenElevation, elev, 4, retLen) <> 0 Then
+        IsElevated = (elev <> 0)
+    Else
+        IsElevated = False
+    End If
+    CloseHandle hToken
+    Exit Function
+Fail:
+    IsElevated = False
+End Function
+
+' 簡單同步跑命令回結束碼（隱藏）
+Private Function ShellRunSimple(ByVal cmdLine As String) As Long
+    On Error GoTo Fail
+    Dim si As STARTUPINFO, pi As PROCESS_INFORMATION
+    Dim wr As Long, rc As Long
+    si.cb = Len(si)
+    si.dwFlags = STARTF_USESHOWWINDOW
+    si.wShowWindow = SW_HIDE
+    If CreateProcessA(vbNullString, cmdLine, 0, 0, 0, CREATE_NO_WINDOW, 0, vbNullString, si, pi) = 0 Then ' 移除 cmd.exe /s /c 避免 & 符號截斷指令
+        ShellRunSimple = -1
+        Exit Function
+    End If
+    wr = WaitForSingleObject(pi.hProcess, 10000)
+    If wr = WAIT_OBJECT_0 Then
+        GetExitCodeProcess pi.hProcess, rc
+    Else
+        rc = -1
+    End If
+    CloseHandle pi.hThread
+    CloseHandle pi.hProcess
+    ShellRunSimple = rc
+    Exit Function
+Fail:
+    ShellRunSimple = -1
+End Function
+
+' 取得 pnputil 路徑（優先 sysnative 避開 WOW64）
+Private Function PnpUtilPath() As String
+    Dim p As String
+    p = Environ$("WINDIR")
+    If Right$(p, 1) <> "\" Then p = p & "\"
+    If Len(dir$(p & "sysnative\pnputil.exe")) > 0 Then
+        PnpUtilPath = p & "sysnative\pnputil.exe"
+    Else
+        PnpUtilPath = p & "System32\pnputil.exe"
+    End If
+End Function
+
+' 核心：清除虛擬顯卡，回傳 0=成功/無需清理，非0=失敗
+' 只應在 elevated 行程中呼叫
+Public Function CleanVirtualGpus() As Long
+    On Error GoTo Fail
+    Dim col As Object, mo As Object, n As Long, instId As String, Name As String
+    Dim pnp As String, rc As Long, left As Long
+    
+    LogMsg S_LogCleanStart()
+    pnp = PnpUtilPath()
+    
+    Set col = GetObject("winmgmts:\\.\root\cimv2").ExecQuery( _
+    "SELECT * FROM Win32_PnPEntity WHERE PNPClass='Display'")
+    
+    n = 0
+    For Each mo In col
+        On Error Resume Next
+        Name = CStr(mo.Name)
+        instId = CStr(mo.DeviceID)
+        If Err.Number <> 0 Then Err.Clear: GoTo NextDev
+        On Error GoTo Fail
+        ' 保留 AMD / NVIDIA / Intel
+        If InStr(1, Name, "AMD", vbTextCompare) > 0 Then GoTo NextDev
+        If InStr(1, Name, "NVIDIA", vbTextCompare) > 0 Then GoTo NextDev
+        If InStr(1, Name, "Intel", vbTextCompare) > 0 Then GoTo NextDev
+        ' 其餘視為虛擬卡，砍
+        LogMsg S_LogCleanRemove(Name)
+        rc = ShellRunSimple("""" & pnp & """ /remove-device """ & instId & """")
+        LogMsg S_LogCleanRemoveRc(rc)
+        n = n + 1
+        Sleep 1000
+NextDev:
     Next
-    If targets = 0 Then
+    
+    If n = 0 Then
         LogMsg S_LogCleanNone()
-        CleanVirtualDisplays = 0
+        CleanVirtualGpus = 0
         Exit Function
     End If
-    t0 = GetTickCount()
-    Do
-        If Not EnumAdapters(ids, names, n) Then
-            LogMsg S_LogCleanErr("re-enum")
-            CleanVirtualDisplays = 2
-            Exit Function
-        End If
-        ok = True
-        For i = 0 To n - 1
-            If IsVirtualAdapter(names(i)) Then ok = False: Exit For
-        Next
-        If ok Then
-            LogMsg S_LogCleanOk()
-            CleanVirtualDisplays = 0
-            Exit Function
-        End If
+    
+    ' 45 秒驗證迴圈
+    left = 45
+    Do While left > 0
         Sleep 2000
-    Loop While (GetTickCount() - t0 >= 0) And (GetTickCount() - t0 < 45000)
-    LogMsg S_LogCleanLeft()
-    CleanVirtualDisplays = 1
+        left = left - 2
+        If CountVirtualLeft() = 0 Then
+            LogMsg S_LogCleanOk()
+            CleanVirtualGpus = 0
+            Exit Function
+        End If
+    Loop
+    LogMsg S_LogCleanTimeout()
+    CleanVirtualGpus = 2
     Exit Function
 Fail:
     LogMsg S_LogCleanErr(Err.Description)
-    CleanVirtualDisplays = 2
+    CleanVirtualGpus = 1
 End Function
 
-' 列舉 Display 類裝置（經 pnputil，輸出轉暫存檔再解析）
-Private Function EnumAdapters(ByRef ids() As String, ByRef names() As String, ByRef count As Long) As Boolean
+Private Function CountVirtualLeft() As Long
     On Error GoTo Fail
-    Dim tmp As String, fn As Integer, line As String, t As String
-    Dim curId As String, curDesc As String
-    Dim capN As Long
-    tmp = Environ$("TEMP") & "\ahv_enum.txt"
-    On Error Resume Next
-    Kill tmp
-    On Error GoTo Fail
-    ShellRunHidden "pnputil.exe /enum-devices /class Display > """ & tmp & """", g_WorkDir
-    If Dir$(tmp) = "" Then Exit Function
-    ReDim ids(0 To 15)
-    ReDim names(0 To 15)
-    capN = 16
-    count = 0
-    curId = ""
-    curDesc = ""
-    fn = FreeFile
-    Open tmp For Input As #fn
-    Do While Not EOF(fn)
-        Line Input #fn, line
-        t = Trim$(line)
-        If Left$(t, 12) = "Instance ID:" Then
-            curId = Trim$(Mid$(t, 13))
-        ElseIf Left$(t, 19) = "Device Description:" Then
-            curDesc = Trim$(Mid$(t, 20))
-        ElseIf t = "" Then
-            If curId <> "" Then
-                If count >= capN Then
-                    capN = capN * 2
-                    ReDim Preserve ids(0 To capN - 1)
-                    ReDim Preserve names(0 To capN - 1)
-                End If
-                ids(count) = curId
-                names(count) = curDesc
-                count = count + 1
-                curId = ""
-                curDesc = ""
-            End If
+    Dim col As Object, mo As Object, Name As String, n As Long
+    Set col = GetObject("winmgmts:\\.\root\cimv2").ExecQuery( _
+        "SELECT * FROM Win32_PnPEntity WHERE PNPClass='Display'")
+    n = 0
+    For Each mo In col
+        On Error Resume Next
+        Name = CStr(mo.Name)
+        If Err.Number <> 0 Then Err.Clear: GoTo Nx
+        On Error GoTo Fail
+        If InStr(1, Name, "AMD", vbTextCompare) = 0 And _
+           InStr(1, Name, "NVIDIA", vbTextCompare) = 0 And _
+           InStr(1, Name, "Intel", vbTextCompare) = 0 Then
+            n = n + 1
         End If
-    Loop
-    Close #fn
-    If curId <> "" Then
-        If count >= capN Then
-            ReDim Preserve ids(0 To count)
-            ReDim Preserve names(0 To count)
-        End If
-        ids(count) = curId
-        names(count) = curDesc
-        count = count + 1
-    End If
-    EnumAdapters = True
+Nx:
+    Next
+    CountVirtualLeft = n
     Exit Function
 Fail:
-    On Error Resume Next
-    Close #fn
-    EnumAdapters = False
-End Function
-
-' 顯示卡名稱不含 AMD/NVIDIA/INTEL 即視為虛擬（空名稱亦然）
-Private Function IsVirtualAdapter(ByVal desc As String) As Boolean
-    Dim u As String
-    u = UCase$(desc)
-    IsVirtualAdapter = (InStr(u, "AMD") = 0 And InStr(u, "NVIDIA") = 0 And InStr(u, "INTEL") = 0)
+    CountVirtualLeft = -1
 End Function
