@@ -45,19 +45,19 @@ Private Const CREATE_NO_WINDOW = &H8000000
 Private Const STARTF_USESHOWWINDOW = &H1
 Private Const SW_HIDE = 0
 Private Const WAIT_OBJECT_0 = 0
-Private Const TOKEN_QUERY As Long = &H8
-Private Const TokenElevation As Long = 20
+Private Const TOKEN_QUERY As Long = &H8 ' 查權限用存取碼
+Private Const TokenElevation As Long = 20 ' 提權資訊類別碼（固定 20）
 
 ' 是否以系統管理員執行
 Public Function IsElevated() As Boolean
     On Error GoTo Fail
     Dim hToken As Long, elev As Long, retLen As Long
-    If OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, hToken) = 0 Then
+    If OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, hToken) = 0 Then ' 打不開權杖=沒權：直接回假
         IsElevated = False
         Exit Function
     End If
     elev = 0
-    If GetTokenInformation(hToken, TokenElevation, elev, 4, retLen) <> 0 Then
+    If GetTokenInformation(hToken, TokenElevation, elev, 4, retLen) <> 0 Then ' 讀 4 位元組提權旗標
         IsElevated = (elev <> 0)
     Else
         IsElevated = False
@@ -80,11 +80,11 @@ Private Function ShellRunSimple(ByVal cmdLine As String) As Long
         ShellRunSimple = -1
         Exit Function
     End If
-    wr = WaitForSingleObject(pi.hProcess, 10000)
+    wr = WaitForSingleObject(pi.hProcess, 10000) ' 等 10 秒：夠 pnputil 跑完
     If wr = WAIT_OBJECT_0 Then
         GetExitCodeProcess pi.hProcess, rc
     Else
-        rc = -1
+        rc = -1 ' 逾時記 -1
     End If
     CloseHandle pi.hThread
     CloseHandle pi.hProcess
@@ -97,9 +97,9 @@ End Function
 ' 取得 pnputil 路徑（優先 sysnative 避開 WOW64）
 Private Function PnpUtilPath() As String
     Dim p As String
-    p = Environ$("WINDIR")
+    p = Environ$("WINDIR") ' 系統目錄：通常 C:\Windows
     If Right$(p, 1) <> "\" Then p = p & "\"
-    If Len(dir$(p & "sysnative\pnputil.exe")) > 0 Then
+    If Len(dir$(p & "sysnative\pnputil.exe")) > 0 Then ' 32 位元行程優先 sysnative：避開轉向拿到真 64 位元版
         PnpUtilPath = p & "sysnative\pnputil.exe"
     Else
         PnpUtilPath = p & "System32\pnputil.exe"
@@ -122,46 +122,46 @@ Public Function CleanVirtualGpus() As Long
     n = 0
     For Each mo In col
         On Error Resume Next
-        Name = CStr(mo.Name)
-        instId = CStr(mo.DeviceID)
-        If Err.Number <> 0 Then Err.Clear: GoTo NextDev
+        Name = CStr(mo.Name) ' 取裝置顯示名（認廠牌用）
+        instId = CStr(mo.DeviceID) ' 取實例 ID：移除憑證
+        If Err.Number <> 0 Then Err.Clear: GoTo NextDev ' 讀失敗跳下一個，不中斷整輪
         On Error GoTo Fail
         ' 保留 AMD / NVIDIA / Intel
-        If InStr(1, Name, "AMD", vbTextCompare) > 0 Then GoTo NextDev
-        If InStr(1, Name, "NVIDIA", vbTextCompare) > 0 Then GoTo NextDev
-        If InStr(1, Name, "Intel", vbTextCompare) > 0 Then GoTo NextDev
+        If InStr(1, Name, "AMD", vbTextCompare) > 0 Then GoTo NextDev ' 真卡保留：AMD
+        If InStr(1, Name, "NVIDIA", vbTextCompare) > 0 Then GoTo NextDev ' 真卡保留：NVIDIA
+        If InStr(1, Name, "Intel", vbTextCompare) > 0 Then GoTo NextDev ' 真卡保留：Intel
         ' 其餘視為虛擬卡，砍
         LogMsg S_LogCleanRemove(Name)
-        rc = ShellRunSimple("""" & pnp & """ /remove-device """ & instId & """")
+        rc = ShellRunSimple("""" & pnp & """ /remove-device """ & instId & """") ' 呼叫 pnputil 拔裝置（引號防空白）
         LogMsg S_LogCleanRemoveRc(rc)
-        n = n + 1
-        Sleep 1000
+        n = n + 1 ' 計移除台數
+        Sleep 1000 ' 停一秒：等裝置管理員消化
 NextDev:
     Next
     
     If n = 0 Then
         LogMsg S_LogCleanNone()
-        CleanVirtualGpus = 0
+        CleanVirtualGpus = 0 ' 完成：無殘留或本就無卡
         Exit Function
     End If
     
     ' 45 秒驗證迴圈
-    left = 45
+    left = 45 ' 最多驗 45 秒
     Do While left > 0
-        Sleep 2000
-        left = left - 2
+        Sleep 2000 ' 兩秒驗一次
+        left = left - 2 ' 扣兩秒
         If CountVirtualLeft() = 0 Then
             LogMsg S_LogCleanOk()
-            CleanVirtualGpus = 0
+            CleanVirtualGpus = 0 ' 完成：無殘留或本就無卡
             Exit Function
         End If
     Loop
     LogMsg S_LogCleanTimeout()
-    CleanVirtualGpus = 2
+    CleanVirtualGpus = 2 ' 逾時：還有殘留
     Exit Function
 Fail:
     LogMsg S_LogCleanErr(Err.Description)
-    CleanVirtualGpus = 1
+    CleanVirtualGpus = 1 ' 異常結束
 End Function
 
 ' 用途：數殘留虛擬卡（驗證清卡成效）
@@ -173,18 +173,19 @@ Private Function CountVirtualLeft() As Long
     n = 0
     For Each mo In col
         On Error Resume Next
-        Name = CStr(mo.Name)
+        Name = CStr(mo.Name) ' 取裝置顯示名（認廠牌用）
         If Err.Number <> 0 Then Err.Clear: GoTo Nx
         On Error GoTo Fail
+        ' 三大廠都沒有=虛擬卡，計數
         If InStr(1, Name, "AMD", vbTextCompare) = 0 And _
            InStr(1, Name, "NVIDIA", vbTextCompare) = 0 And _
            InStr(1, Name, "Intel", vbTextCompare) = 0 Then
-            n = n + 1
+            n = n + 1 ' 計殘留台數
         End If
 Nx:
     Next
     CountVirtualLeft = n
     Exit Function
 Fail:
-    CountVirtualLeft = -1
+    CountVirtualLeft = -1 ' 查詢失敗回 -1
 End Function

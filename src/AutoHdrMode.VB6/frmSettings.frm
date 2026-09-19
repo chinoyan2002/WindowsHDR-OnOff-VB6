@@ -45,6 +45,7 @@ Begin VB.Form frmSettings
       Top             =   120
       Width           =   1200
    End
+' ---- 一般頁：輪詢與自動 ----
    Begin VB.PictureBox picMain 
       BorderStyle     =   0  '沒有框線
       Height          =   4800
@@ -144,6 +145,7 @@ Begin VB.Form frmSettings
          Width           =   3600
       End
    End
+' ---- 斷電頁：螢幕關的整套動作 ----
    Begin VB.PictureBox picOff 
       BorderStyle     =   0  '沒有框線
       Height          =   4800
@@ -282,6 +284,7 @@ Begin VB.Form frmSettings
          Width           =   4600
       End
    End
+' ---- 通電頁：螢幕開的整套動作（與斷電頁鏡像） ----
    Begin VB.PictureBox picOn 
       BorderStyle     =   0  '沒有框線
       Height          =   4800
@@ -420,6 +423,7 @@ Begin VB.Form frmSettings
          Width           =   4600
       End
    End
+' ---- 記錄頁：讀記錄尾 ----
    Begin VB.PictureBox picLog 
       BorderStyle     =   0  '沒有框線
       Height          =   4800
@@ -488,9 +492,9 @@ Attribute VB_Exposed = False
 Option Explicit
 ' 本窗：設定 UI（Startup 進入點）。四分頁＋記錄尾讀；X 只隱藏
 
-Private m_tab As Integer
-Private m_lastLog As String
-Private m_pause As Boolean
+Private m_tab As Integer ' 0一般 1斷電 2通電 3記錄
+Private m_lastLog As String ' 上次顯示內容：相同不重繪
+Private m_pause As Boolean ' 記錄頁暫停捲動
 
 ' 用途：切分頁；參數 idx：0一般 1斷電 2通電 3記錄
 Public Sub ShowTab(ByVal idx As Integer)
@@ -505,8 +509,8 @@ End Sub
 
 ' 用途：程式進入點 Startup：跑 AppBootstrap、載托盤窗、套 UI；首次執行才顯示
 Private Sub Form_Load()
-    Call AppBootstrap
-    Load frmTray
+    Call AppBootstrap ' CLI 在此分流：帶參數做完就走，不進 GUI
+    Load frmTray ' 載常駐本體：只取值不用顯示
     
         Me.Caption = AppVersionLine()
     btnTab0.Caption = "一般"
@@ -518,7 +522,7 @@ Private Sub Form_Load()
     
     cboOffHDR.Clear
     cboOffHDR.AddItem "（不動作）"
-    cboOffHDR.ItemData(0) = 0
+    cboOffHDR.ItemData(0) = 0 ' 斷電頁：0略過 1關HDR 2開HDR
     cboOffHDR.AddItem "關閉 HDR"
     cboOffHDR.ItemData(1) = 1
     cboOffHDR.AddItem "開啟 HDR"
@@ -526,27 +530,27 @@ Private Sub Form_Load()
     
     cboOnHDR.Clear
     cboOnHDR.AddItem "（不動作）"
-    cboOnHDR.ItemData(0) = 0
+    cboOnHDR.ItemData(0) = 0 ' 通電頁：0略過 1開HDR 2關HDR（與斷電鏡像）
     cboOnHDR.AddItem "開啟 HDR"
     cboOnHDR.ItemData(1) = 1
     cboOnHDR.AddItem "關閉 HDR"
     cboOnHDR.ItemData(2) = 2
     
     LoadToUI
-    If m_tab < 0 Or m_tab > 3 Then m_tab = 0
+    If m_tab < 0 Or m_tab > 3 Then m_tab = 0 ' 範圍保護：越界回一般頁
     ApplyTab
-    m_pause = False
+    m_pause = False ' 預設跟著捲
     m_lastLog = ""
-    tmrLog.Enabled = True
+    tmrLog.Enabled = True ' 記錄節拍先開，ApplyTab 會再管一次
     
-    If Not g_FirstRun Then
+    If Not g_FirstRun Then ' 非首次：直接藏，只留托盤
         Me.Hide
     End If
 End Sub
 
 ' 用途：NativeHDR 字串轉下拉索引；回傳：0略過 1開 2關
 Private Function HdrToIndex(ByVal cbo As ComboBox, ByVal v As String, ByVal isOn As Boolean) As Long
-    v = LCase$(Trim$(v))
+    v = LCase$(Trim$(v)) ' 正規化：去空白轉小寫再比
     If isOn Then
         If v = "on" Then
             HdrToIndex = 1
@@ -570,7 +574,7 @@ End Function
 Private Function IndexToHdr(ByVal cbo As ComboBox, ByVal isOn As Boolean) As String
     Dim i As Long
     i = cbo.ListIndex
-    If i < 0 Then i = 0
+    If i < 0 Then i = 0 ' 未選視為略過
     If isOn Then
         Select Case i
             Case 1: IndexToHdr = "on"
@@ -588,54 +592,58 @@ End Function
 
 ' 用途：全域設定灌入控制項
 Private Sub LoadToUI()
-    txtPoll.Text = CStr(g_PollSec)
-    txtStable.Text = CStr(g_StableN)
-    chkAuto.Value = IIf(g_AutoOn, vbChecked, vbUnchecked)
-    chkAutostart.Value = IIf(AutostartInstalled(), vbChecked, vbUnchecked)
-    chkBalloon.Value = IIf(g_Balloon, vbChecked, vbUnchecked)
+    txtPoll.Text = CStr(g_PollSec) ' 讀出：輪詢秒數
+    txtStable.Text = CStr(g_StableN) ' 讀出：穩定次數
+    chkAuto.Value = IIf(g_AutoOn, vbChecked, vbUnchecked) ' 讀出：自動總開關
+    chkAutostart.Value = IIf(AutostartInstalled(), vbChecked, vbUnchecked) ' 讀出：機碼有無（非記憶體值）
+    chkBalloon.Value = IIf(g_Balloon, vbChecked, vbUnchecked) ' 讀出：氣球開關
 
-    chkOffEn.Value = IIf(g_PowerOff.Enabled, vbChecked, vbUnchecked)
-    txtOffDelayHDR.Text = CStr(g_PowerOff.DelayHDR)
-    cboOffHDR.ListIndex = HdrToIndex(cboOffHDR, g_PowerOff.NativeHDR, False)
-    txtOffVerify.Text = CStr(g_PowerOff.VerifySeconds)
-    chkOffClean.Value = IIf(g_PowerOff.CleanHelper, vbChecked, vbUnchecked)
-    txtOffDelayClean.Text = CStr(g_PowerOff.DelayAfterClean)
-    txtOffShell.Text = g_PowerOff.Shell
+    ' ---- 斷電整組讀出 ----
+    chkOffEn.Value = IIf(g_PowerOff.Enabled, vbChecked, vbUnchecked) ' 讀出：斷電啟用
+    txtOffDelayHDR.Text = CStr(g_PowerOff.DelayHDR) ' 讀出：斷電延遲秒數
+    cboOffHDR.ListIndex = HdrToIndex(cboOffHDR, g_PowerOff.NativeHDR, False) ' 讀出：斷電 HDR 選項轉索引
+    txtOffVerify.Text = CStr(g_PowerOff.VerifySeconds) ' 讀出：斷電驗證秒數
+    chkOffClean.Value = IIf(g_PowerOff.CleanHelper, vbChecked, vbUnchecked) ' 讀出：斷電清卡
+    txtOffDelayClean.Text = CStr(g_PowerOff.DelayAfterClean) ' 讀出：斷電清後等待
+    txtOffShell.Text = g_PowerOff.Shell ' 讀出：斷電 Shell
 
-    chkOnEn.Value = IIf(g_PowerOn.Enabled, vbChecked, vbUnchecked)
-    txtOnDelayHDR.Text = CStr(g_PowerOn.DelayHDR)
-    cboOnHDR.ListIndex = HdrToIndex(cboOnHDR, g_PowerOn.NativeHDR, True)
-    txtOnVerify.Text = CStr(g_PowerOn.VerifySeconds)
-    chkOnClean.Value = IIf(g_PowerOn.CleanHelper, vbChecked, vbUnchecked)
-    txtOnDelayClean.Text = CStr(g_PowerOn.DelayAfterClean)
-    txtOnShell.Text = g_PowerOn.Shell
+    ' ---- 通電整組讀出（鏡像） ----
+    chkOnEn.Value = IIf(g_PowerOn.Enabled, vbChecked, vbUnchecked) ' 讀出：通電啟用
+    txtOnDelayHDR.Text = CStr(g_PowerOn.DelayHDR) ' 讀出：通電延遲秒數
+    cboOnHDR.ListIndex = HdrToIndex(cboOnHDR, g_PowerOn.NativeHDR, True) ' 讀出：通電 HDR 選項轉索引
+    txtOnVerify.Text = CStr(g_PowerOn.VerifySeconds) ' 讀出：通電驗證秒數
+    chkOnClean.Value = IIf(g_PowerOn.CleanHelper, vbChecked, vbUnchecked) ' 讀出：通電清卡
+    txtOnDelayClean.Text = CStr(g_PowerOn.DelayAfterClean) ' 讀出：通電清後等待
+    txtOnShell.Text = g_PowerOn.Shell ' 讀出：通電 Shell
 End Sub
 
 ' 用途：控制項寫回全域（含範圍夾限）
 Private Sub UIToGlobals()
-    g_PollSec = val(txtPoll.Text)
+    g_PollSec = val(txtPoll.Text) ' 非數字 val 給 0，下面夾回 1
     If g_PollSec < 1 Then g_PollSec = 1
-    If g_PollSec > 30 Then g_PollSec = 30
-    g_StableN = val(txtStable.Text)
-    If g_StableN < 1 Then g_StableN = 1
-    g_AutoOn = (chkAuto.Value = vbChecked)
-    g_Balloon = (chkBalloon.Value = vbChecked)
+    If g_PollSec > 30 Then g_PollSec = 30 ' Timer 上限 32767 毫秒，30 秒封頂
+    g_StableN = val(txtStable.Text) ' 寫入：穩定次數（下行夾限）
+    If g_StableN < 1 Then g_StableN = 1 ' 至少一次才有意義
+    g_AutoOn = (chkAuto.Value = vbChecked) ' 寫入：自動總開關
+    g_Balloon = (chkBalloon.Value = vbChecked) ' 寫入：氣球開關
 
-    g_PowerOff.Enabled = (chkOffEn.Value = vbChecked)
-    g_PowerOff.DelayHDR = val(txtOffDelayHDR.Text)
-    g_PowerOff.NativeHDR = IndexToHdr(cboOffHDR, False)
-    g_PowerOff.VerifySeconds = val(txtOffVerify.Text)
-    g_PowerOff.CleanHelper = (chkOffClean.Value = vbChecked)
-    g_PowerOff.DelayAfterClean = val(txtOffDelayClean.Text)
-    g_PowerOff.Shell = Trim$(txtOffShell.Text)
+    ' ---- 斷電整組 ----
+    g_PowerOff.Enabled = (chkOffEn.Value = vbChecked) ' 寫入：斷電啟用
+    g_PowerOff.DelayHDR = val(txtOffDelayHDR.Text) ' 寫入：斷電延遲秒數
+    g_PowerOff.NativeHDR = IndexToHdr(cboOffHDR, False) ' 寫入：斷電 HDR 選項轉字串
+    g_PowerOff.VerifySeconds = val(txtOffVerify.Text) ' 寫入：斷電驗證秒數
+    g_PowerOff.CleanHelper = (chkOffClean.Value = vbChecked) ' 寫入：斷電清卡
+    g_PowerOff.DelayAfterClean = val(txtOffDelayClean.Text) ' 寫入：斷電清後等待
+    g_PowerOff.Shell = Trim$(txtOffShell.Text) ' 寫入：斷電 Shell（去空白）
 
-    g_PowerOn.Enabled = (chkOnEn.Value = vbChecked)
-    g_PowerOn.DelayHDR = val(txtOnDelayHDR.Text)
-    g_PowerOn.NativeHDR = IndexToHdr(cboOnHDR, True)
-    g_PowerOn.VerifySeconds = val(txtOnVerify.Text)
-    g_PowerOn.CleanHelper = (chkOnClean.Value = vbChecked)
-    g_PowerOn.DelayAfterClean = val(txtOnDelayClean.Text)
-    g_PowerOn.Shell = Trim$(txtOnShell.Text)
+    ' ---- 通電整組（鏡像） ----
+    g_PowerOn.Enabled = (chkOnEn.Value = vbChecked) ' 寫入：通電啟用
+    g_PowerOn.DelayHDR = val(txtOnDelayHDR.Text) ' 寫入：通電延遲秒數
+    g_PowerOn.NativeHDR = IndexToHdr(cboOnHDR, True) ' 寫入：通電 HDR 選項轉字串
+    g_PowerOn.VerifySeconds = val(txtOnVerify.Text) ' 寫入：通電驗證秒數
+    g_PowerOn.CleanHelper = (chkOnClean.Value = vbChecked) ' 寫入：通電清卡
+    g_PowerOn.DelayAfterClean = val(txtOnDelayClean.Text) ' 寫入：通電清後等待
+    g_PowerOn.Shell = Trim$(txtOnShell.Text) ' 寫入：通電 Shell（去空白）
 End Sub
 
 ' 用途：依 m_tab 顯示對應頁；記錄頁順手重讀
@@ -653,25 +661,25 @@ Private Sub ApplyTab()
     btnTab1.BackColor = IIf(m_tab = 1, &H800000, &H0)
     btnTab2.BackColor = IIf(m_tab = 2, &H800000, &H0)
     btnTab3.BackColor = IIf(m_tab = 3, &H800000, &H0)
-    tmrLog.Enabled = (m_tab = 3 And Me.Visible)
-    If m_tab = 3 Then RefreshLog
+    tmrLog.Enabled = (m_tab = 3 And Me.Visible) ' 只有記錄頁現身才讀檔
+    If m_tab = 3 Then RefreshLog ' 切過去立刻刷一次
 End Sub
 
 ' 用途：分頁鈕：切一般頁
 Private Sub btnTab0_Click()
-    m_tab = 0: ApplyTab
+    m_tab = 0: ApplyTab ' 切一般頁再套版
 End Sub
 ' 用途：分頁鈕：切斷電頁
 Private Sub btnTab1_Click()
-    m_tab = 1: ApplyTab
+    m_tab = 1: ApplyTab ' 切斷電頁再套版
 End Sub
 ' 用途：分頁鈕：切通電頁
 Private Sub btnTab2_Click()
-    m_tab = 2: ApplyTab
+    m_tab = 2: ApplyTab ' 切通電頁再套版
 End Sub
 ' 用途：分頁鈕：切記錄頁
 Private Sub btnTab3_Click()
-    m_tab = 3: ApplyTab
+    m_tab = 3: ApplyTab ' 切記錄頁再套版
 End Sub
 
 ' 用途：存檔：UI→全域→寫 INI→套自啟→同步托盤；存完不關窗
@@ -679,12 +687,12 @@ Private Sub btnSave_Click()
     On Error Resume Next
     UIToGlobals
     ConfigSave
-    If chkAutostart.Value = vbChecked Then
+    If chkAutostart.Value = vbChecked Then ' 自啟勾選與機碼同步寫入或刪除
         Call AutostartSet(True)
     Else
         Call AutostartSet(False)
     End If
-    frmTray.tmrPoll.Interval = g_PollSec * 1000
+    frmTray.tmrPoll.Interval = g_PollSec * 1000 ' 間隔立即生效，不用重開
     frmTray.mnuAuto.Checked = g_AutoOn
     frmTray.mnuBalloon.Checked = g_Balloon
     LogMsg S_LogSettingsSaved()
@@ -698,13 +706,13 @@ End Sub
 
 ' 用途：點 X 只隱藏，擋掉真正關閉
 Private Sub Form_QueryUnload(Cancel As Integer, UnloadMode As Integer)
-    If UnloadMode = vbFormControlMenu Then
+    If UnloadMode = vbFormControlMenu Then ' 只有點 X 才擋；程式結束的 Unload 放行
         Cancel = True
         Me.Hide
-        tmrLog.Enabled = False
+        tmrLog.Enabled = False ' 藏窗就停讀，省磁碟
         Exit Sub
     End If
-    tmrLog.Enabled = False
+    tmrLog.Enabled = False ' 結束卸載：停讀記錄
 End Sub
 
 ' 用途：記錄頁暫停或繼續自動捲動
@@ -714,7 +722,7 @@ End Sub
 
 ' 用途：記錄頁節拍：可見且未暫停時重讀記錄尾
 Private Sub tmrLog_Timer()
-    If Not picLog.Visible Or m_pause Then Exit Sub
+    If Not picLog.Visible Or m_pause Then Exit Sub ' 頁面藏起或暫停：跳過
     RefreshLog
 End Sub
 
@@ -723,20 +731,20 @@ Private Sub RefreshLog()
     On Error GoTo Fail
     Dim fn As Integer, line As String, buf As String
     Dim lines() As String, i As Long, start As Long, n As Long
-    If g_LogFile = "" Then Exit Sub
-    If dir$(g_LogFile) = "" Then Exit Sub
+    If g_LogFile = "" Then Exit Sub ' 路徑空：無檔可讀
+    If dir$(g_LogFile) = "" Then Exit Sub ' 檔不存在：等下一輪
     fn = FreeFile
     Open g_LogFile For Input As #fn
     buf = ""
     Do While Not EOF(fn)
         Line Input #fn, line
-        buf = buf & line & vbCrLf
+        buf = buf & line & vbCrLf ' 逐行串起，保留換行
     Loop
     Close #fn
     lines = Split(buf, vbCrLf)
     n = UBound(lines) - LBound(lines) + 1
     If n > 200 Then
-        start = UBound(lines) - 199
+        start = UBound(lines) - 199 ' 超 200 行：只留尾段
         buf = ""
         For i = start To UBound(lines)
             If i > start Then buf = buf & vbCrLf
@@ -744,12 +752,12 @@ Private Sub RefreshLog()
         Next
     End If
     If buf <> m_lastLog Then
-        m_lastLog = buf
+        m_lastLog = buf ' 記住本次：下次相同跳過
         txtLog.Text = buf
-        txtLog.SelStart = Len(txtLog.Text)
+        txtLog.SelStart = Len(txtLog.Text) ' 游標跳尾：自動跟最新
     End If
     Exit Sub
 Fail:
-    On Error Resume Next
+    On Error Resume Next ' 讀到一半出錯也要關檔，防鎖死
     Close #fn
 End Sub

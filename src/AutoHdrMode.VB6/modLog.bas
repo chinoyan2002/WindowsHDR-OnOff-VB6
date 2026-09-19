@@ -5,15 +5,15 @@ Option Explicit
 
 Public g_LogFile As String
 
-Private Const LOG_MAX_LINES As Long = 2000
-Private m_writeCount As Long
+Private Const LOG_MAX_LINES As Long = 2000 ' 上限 2000 行，超了截頭
+Private m_writeCount As Long ' 寫計數：20 次檢查一次截斷
 
 ' 用途：決定記錄檔路徑（LogDir 空白則放 exe 目錄）
 Public Sub LogInit(ByVal dir As String)
     On Error Resume Next
-    If dir = "" Then dir = App.Path
+    If dir = "" Then dir = App.Path ' 目錄空白=放 exe 旁
     If Right$(dir, 1) = "\" Then dir = Left$(dir, Len(dir) - 1)
-    MkDir dir
+    MkDir dir ' 目錄不存在就建（存在會報錯但 Resume Next 蓋掉）
     g_LogFile = dir & "\autohdrmode.log"
     m_writeCount = 0
     ' 啟動時若已超過上限先裁一次
@@ -24,10 +24,10 @@ End Sub
 Public Sub LogMsg(ByVal msg As String)
     On Error Resume Next
     Dim fn As Integer
-    If Len(g_LogFile) = 0 Then Exit Sub
+    If Len(g_LogFile) = 0 Then Exit Sub ' 路徑空：未初始化跳過
     fn = FreeFile
     Open g_LogFile For Append As #fn
-    Print #fn, Format$(Now, "yyyy-mm-dd hh:nn:ss") & " " & msg
+    Print #fn, Format$(Now, "yyyy-mm-dd hh:nn:ss") & " " & msg ' 時間戳格式：年-月-日 時:分:秒
     Close #fn
     m_writeCount = m_writeCount + 1
     ' 每寫入約 20 行檢查一次，避免每行都重寫整檔
@@ -49,7 +49,7 @@ Public Sub LogTrimToMax()
     Dim start As Long
     Dim out As String
 
-    If Len(g_LogFile) = 0 Then Exit Sub
+    If Len(g_LogFile) = 0 Then Exit Sub ' 路徑空：未初始化跳過
     If Dir$(g_LogFile) = "" Then Exit Sub
 
     fn = FreeFile
@@ -69,9 +69,9 @@ Public Sub LogTrimToMax()
     If n > 0 Then
         If Len(lines(UBound(lines))) = 0 Then n = n - 1
     End If
-    If n <= LOG_MAX_LINES Then Exit Sub
+    If n <= LOG_MAX_LINES Then Exit Sub ' 未超標：收工
 
-    start = UBound(lines) - LOG_MAX_LINES + 1
+    start = UBound(lines) - LOG_MAX_LINES + 1 ' 起點：尾段對齊上限
     If start < LBound(lines) Then start = LBound(lines)
     out = ""
     For i = start To UBound(lines)
@@ -83,7 +83,7 @@ Public Sub LogTrimToMax()
 
     fn = FreeFile
     Open g_LogFile For Output As #fn
-    Print #fn, out;
+    Print #fn, out; ' 尾端分號：不另加換行（內容自帶換行）
     Close #fn
     Exit Sub
 Fail:

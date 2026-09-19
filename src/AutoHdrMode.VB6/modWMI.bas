@@ -4,14 +4,14 @@ Attribute VB_Name = "modWMI"
 Option Explicit
 
 Private Type PHYSICAL_MONITOR
-    hPhysicalMonitor As Long
-    szPhysicalMonitorDescription(255) As Byte
+    hPhysicalMonitor As Long ' 實體螢幕代碼
+    szPhysicalMonitorDescription(255) As Byte ' 描述 256 位元組（即 128 寬字）
 End Type
 
-Private Declare Function EnumDisplayMonitors Lib "user32" (ByVal hdc As Long, ByVal lprcClip As Long, ByVal lpfnEnum As Long, ByVal dwData As Long) As Long
-Private Declare Function GetPhysicalMonitorsFromHMONITOR Lib "dxva2.dll" (ByVal hMonitor As Long, ByVal dwPhysicalMonitorArraySize As Long, pPhysicalMonitorArray As PHYSICAL_MONITOR) As Long
-Private Declare Function DestroyPhysicalMonitors Lib "dxva2.dll" (ByVal dwPhysicalMonitorArraySize As Long, pPhysicalMonitorArray As PHYSICAL_MONITOR) As Long
-Private Declare Function GetVCPFeatureAndVCPFeatureReply Lib "dxva2.dll" (ByVal hMonitor As Long, ByVal bVCPCode As Byte, pdwVCPCodeType As Long, pdwCurrentValue As Long, pdwMaximumValue As Long) As Long
+Private Declare Function EnumDisplayMonitors Lib "user32" (ByVal hdc As Long, ByVal lprcClip As Long, ByVal lpfnEnum As Long, ByVal dwData As Long) As Long ' 列舉顯示器：一台呼叫一次回呼
+Private Declare Function GetPhysicalMonitorsFromHMONITOR Lib "dxva2.dll" (ByVal hMonitor As Long, ByVal dwPhysicalMonitorArraySize As Long, pPhysicalMonitorArray As PHYSICAL_MONITOR) As Long ' 取實體代碼：虛擬卡無此物會失敗
+Private Declare Function DestroyPhysicalMonitors Lib "dxva2.dll" (ByVal dwPhysicalMonitorArraySize As Long, pPhysicalMonitorArray As PHYSICAL_MONITOR) As Long ' 釋放代碼：必呼叫防洩漏
+Private Declare Function GetVCPFeatureAndVCPFeatureReply Lib "dxva2.dll" (ByVal hMonitor As Long, ByVal bVCPCode As Byte, pdwVCPCodeType As Long, pdwCurrentValue As Long, pdwMaximumValue As Long) As Long ' 讀 VCP 功能值：D6 即電源
 
 Private m_MonitorCount As Long                                                  ' 記錄實體螢幕總數
 Private m_PowerOnCount As Long                                                  ' 記錄通電中的螢幕數
@@ -41,9 +41,9 @@ End Function
 ' 用途：EnumDisplayMonitors 回呼；D6=1 計通電、2/3 計待命，餘不計；回傳 1 繼續下一個
 Public Function MonitorEnumProc(ByVal hMonitor As Long, ByVal hdcMonitor As Long, ByVal lprcMonitor As Long, ByVal dwData As Long) As Long
     Dim physMon As PHYSICAL_MONITOR, vct As Long, currentVal As Long, maxVal As Long
-    If GetPhysicalMonitorsFromHMONITOR(hMonitor, 1, physMon) Then
+    If GetPhysicalMonitorsFromHMONITOR(hMonitor, 1, physMon) Then ' 取不到=虛擬卡：整台跳過
         m_MonitorCount = m_MonitorCount + 1                                     ' 發現實體螢幕
-        If GetVCPFeatureAndVCPFeatureReply(physMon.hPhysicalMonitor, &HD6, vct, currentVal, maxVal) Then
+        If GetVCPFeatureAndVCPFeatureReply(physMon.hPhysicalMonitor, &HD6, vct, currentVal, maxVal) Then ' &HD6：電源模式碼
             If currentVal = 1 Then
                 m_PowerOnCount = m_PowerOnCount + 1                                          ' D6=1 通電中
             ElseIf currentVal = 2 Or currentVal = 3 Then

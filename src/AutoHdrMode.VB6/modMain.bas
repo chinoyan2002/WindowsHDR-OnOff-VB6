@@ -2,8 +2,8 @@ Attribute VB_Name = "modMain"
 ' 本模組：程式進入點（對照 C# 版 Program.Main）
 Option Explicit
 
-Private Declare Sub ExitProcess Lib "kernel32" (ByVal uCode As Long)
-Private Declare Function ShellExecuteA Lib "shell32" (ByVal hwnd As Long, ByVal lpOp As String, ByVal lpFile As String, ByVal lpParam As String, ByVal lpDir As String, ByVal nShow As Long) As Long
+Private Declare Sub ExitProcess Lib "kernel32" (ByVal uCode As Long) ' CLI 做完直接帶碼走
+Private Declare Function ShellExecuteA Lib "shell32" (ByVal hwnd As Long, ByVal lpOp As String, ByVal lpFile As String, ByVal lpParam As String, ByVal lpDir As String, ByVal nShow As Long) As Long ' runas 提權起自己用
 
 Private Const SW_HIDE = 0
 
@@ -11,8 +11,8 @@ Private Const SW_HIDE = 0
 ' 正常 GUI 啟動請以 frmSettings 為 Startup，在 Form_Load 呼叫 AppBootstrap
 Public Function AppBootstrap() As Boolean
     Dim args As String
-    args = LCase$(Trim$(Command$))
-    ConfigLoad
+    args = LCase$(Trim$(Command$)) ' 命令列轉小寫去空白再比對
+    ConfigLoad ' 先讀設定，CLI 與 GUI 都要
     LangInit g_Language
     LogInit g_LogDir
 
@@ -30,7 +30,7 @@ Public Function AppBootstrap() As Boolean
         ExitProcess CleanCli()
     End If
 
-    If App.PrevInstance Then
+    If App.PrevInstance Then ' 重複啟動：叫去右下角找舊的
         MsgBox "在桌面右下角已執行!!", vbSystemModal + vbMsgBoxSetForeground
         ExitProcess 0
     End If
@@ -57,8 +57,8 @@ Private Function CleanCli() As Long
         exe = App.Path
         If Right$(exe, 1) <> "\" Then exe = exe & "\"
         exe = exe & App.EXEName & ".exe"
-        rc = ShellExecuteA(0, "runas", exe, "--clean", App.Path, SW_HIDE)
-        If rc > 32 Then
+        rc = ShellExecuteA(0, "runas", exe, "--clean", App.Path, SW_HIDE) ' 非管理員：提權重起自己只做清卡
+        If rc > 32 Then ' 大於 32 即叫起成功（ShellExecute 規範）
             CleanCli = 0
         Else
             LogMsg S_LogCleanElevateFail(rc)
@@ -66,7 +66,7 @@ Private Function CleanCli() As Long
         End If
         Exit Function
     End If
-    CleanCli = CleanVirtualGpus()
+    CleanCli = CleanVirtualGpus() ' 已提權：直接清
     Exit Function
 Fail:
     LogMsg S_LogCleanErr(Err.Description)
@@ -78,7 +78,7 @@ Private Function ProbeRun() As Long
     Dim n As Long, sb As Long
     n = WmiPhysicalCount()
     sb = WmiStandbyCount()
-    LogMsg S_LogProbe(n, sb)
+    LogMsg S_LogProbe(n, sb) ' 探測結果寫檔，結束碼看數字
     If n > 0 Then
         ProbeRun = 0
     ElseIf sb > 0 Then
@@ -105,15 +105,15 @@ Private Function FireCli(ByVal wantOn As Boolean) As Long
     ' DelayHDR
     If cfg.DelayHDR > 0 Then
         LogMsg S_LogPlanHdr(wantOn, cfg.DelayHDR)
-        For i = 1 To cfg.DelayHDR
-            t0 = Timer
-            Do While Timer < t0 + 1
+        For i = 1 To cfg.DelayHDR ' 逐秒等：DoEvents 保活不凍結
+            t0 = Timer ' 記秒起點
+            Do While Timer < t0 + 1 ' 忙等一秒（DoEvents 讓托盤可點）
                 DoEvents
             Loop
         Next
     End If
 
-    If cfg.NativeHDR = "on" Or cfg.NativeHDR = "off" Then
+    If cfg.NativeHDR = "on" Or cfg.NativeHDR = "off" Then ' 空字串=略過 HDR
         If cfg.NativeHDR = "on" Then
             LogMsg S_LogNativeTryOn()
             ok = HDR_Enable()
@@ -121,7 +121,7 @@ Private Function FireCli(ByVal wantOn As Boolean) As Long
             LogMsg S_LogNativeTryOff()
             ok = HDR_Disable()
         End If
-        st = HDR_GetStatus(0)
+        st = HDR_GetStatus(0) ' 讀 0 號螢幕當代表
         LogMsg S_LogNativeResult(ok, st)
         If cfg.NativeHDR = "off" And (st = HDR_UNSUPPORTED Or st = HDR_ERROR Or st = HDR_STATUS_UNKNOWN) Then
             LogMsg S_LogNativeOffNoPath()
@@ -129,13 +129,13 @@ Private Function FireCli(ByVal wantOn As Boolean) As Long
 
         If cfg.VerifySeconds > 0 Then
             LogMsg S_LogVerifyWait(cfg.VerifySeconds)
-            For i = 1 To cfg.VerifySeconds
-                t0 = Timer
-                Do While Timer < t0 + 1
+            For i = 1 To cfg.VerifySeconds ' 逐秒等：給螢幕反應時間
+                t0 = Timer ' 記秒起點
+                Do While Timer < t0 + 1 ' 忙等一秒（DoEvents 讓托盤可點）
                     DoEvents
                 Loop
             Next
-            st = HDR_GetStatus(0)
+            st = HDR_GetStatus(0) ' 讀 0 號螢幕當代表
             ok = False
             If cfg.NativeHDR = "on" Then
                 ok = (st = HDR_ON)
@@ -147,13 +147,13 @@ Private Function FireCli(ByVal wantOn As Boolean) As Long
             Else
                 LogMsg S_LogVerifyFail()
                 If cfg.CleanHelper Then
-                    crc = CleanCli()
-                    LogMsg S_LogCleanDone(crc)
+                    crc = CleanCli() ' 驗不過且要清卡：清一次
+                    LogMsg S_LogCleanDone(crc) ' 清卡結束碼記檔
                     If cfg.DelayAfterClean > 0 Then
                         LogMsg S_LogWaitAfterClean(cfg.DelayAfterClean)
-                        For i = 1 To cfg.DelayAfterClean
-                            t0 = Timer
-                            Do While Timer < t0 + 1
+                        For i = 1 To cfg.DelayAfterClean ' 逐秒等：裝置沉澱
+                            t0 = Timer ' 記秒起點
+                            Do While Timer < t0 + 1 ' 忙等一秒（DoEvents 讓托盤可點）
                                 DoEvents
                             Loop
                         Next
@@ -177,16 +177,16 @@ Private Function FireCli(ByVal wantOn As Boolean) As Long
     ElseIf Not ShellTargetExists(cfg.Shell) Then
         LogMsg S_LogShellSkipMissing(cfg.Shell)
     Else
-        rc = ShellRunHidden(cfg.Shell, g_WorkDir)
+        rc = ShellRunHidden(cfg.Shell, g_WorkDir) ' 工作目錄跑，結束碼記檔
         LogMsg S_LogShellRun(rc)
     End If
 
-    LogMsg S_LogPhaseDone(wantOn)
+    LogMsg S_LogPhaseDone(wantOn) ' 整鏈完成記一筆
     FireCli = 0
     Exit Function
 Fail:
     LogMsg S_LogAutoErr(Err.Description)
-    FireCli = 1
+    FireCli = 1 ' 異常結束碼 1
 End Function
 
 ' 共用：執行一次通電或斷電（NativeHDR 優先，否則／另外跑 Shell）
@@ -195,7 +195,7 @@ Public Sub FireTransitionCore(ByVal wantOn As Boolean, Optional ByVal fromCli As
     On Error GoTo Fail
     Dim cfg As TransCfg, ok As Boolean, st As HDR_STATUS, rc As Long
     If wantOn Then cfg = g_PowerOn Else cfg = g_PowerOff
-    If cfg.NativeHDR = "on" Or cfg.NativeHDR = "off" Then
+    If cfg.NativeHDR = "on" Or cfg.NativeHDR = "off" Then ' 空字串=略過 HDR
         If cfg.NativeHDR = "on" Then
             LogMsg S_LogNativeTryOn()
             ok = HDR_Enable()
@@ -203,7 +203,7 @@ Public Sub FireTransitionCore(ByVal wantOn As Boolean, Optional ByVal fromCli As
             LogMsg S_LogNativeTryOff()
             ok = HDR_Disable()
         End If
-        st = HDR_GetStatus(0)
+        st = HDR_GetStatus(0) ' 讀 0 號螢幕當代表
         LogMsg S_LogNativeResult(ok, st)
     End If
     If Len(Trim$(cfg.Shell)) = 0 Then
@@ -211,7 +211,7 @@ Public Sub FireTransitionCore(ByVal wantOn As Boolean, Optional ByVal fromCli As
     ElseIf Not ShellTargetExists(cfg.Shell) Then
         LogMsg S_LogShellSkipMissing(cfg.Shell)
     Else
-        rc = ShellRunHidden(cfg.Shell, g_WorkDir)
+        rc = ShellRunHidden(cfg.Shell, g_WorkDir) ' 工作目錄跑，結束碼記檔
         LogMsg S_LogShellRun(rc)
     End If
     Exit Sub
@@ -223,10 +223,10 @@ End Sub
 Public Function AutostartInstalled() As Boolean
     On Error Resume Next
     Dim ws As Object, key As String, cur As String
-    Set ws = CreateObject("WScript.Shell")
-    key = "HKCU\Software\Microsoft\Windows\CurrentVersion\Run\AutoHdrMode"
+    Set ws = CreateObject("WScript.Shell") ' 借 WScript 讀寫機碼
+    key = "HKCU\Software\Microsoft\Windows\CurrentVersion\Run\AutoHdrMode" ' 開機啟動機碼位置
     cur = ws.RegRead(key)
-    AutostartInstalled = (Err.Number = 0 And Len(cur) > 0)
+    AutostartInstalled = (Err.Number = 0 And Len(cur) > 0) ' 無錯且有值即已註冊
     Err.Clear
 End Function
 
@@ -234,31 +234,31 @@ End Function
 Public Function AutostartSet(ByVal install As Boolean) As Boolean
     On Error GoTo Fail
     Dim ws As Object, key As String, exe As String
-    Set ws = CreateObject("WScript.Shell")
-    key = "HKCU\Software\Microsoft\Windows\CurrentVersion\Run\AutoHdrMode"
+    Set ws = CreateObject("WScript.Shell") ' 借 WScript 讀寫機碼
+    key = "HKCU\Software\Microsoft\Windows\CurrentVersion\Run\AutoHdrMode" ' 開機啟動機碼位置
     exe = App.Path
     If Right$(exe, 1) <> "\" Then exe = exe & "\"
-    exe = """" & exe & App.EXEName & ".exe" & """"
+    exe = """" & exe & App.EXEName & ".exe" & """" ' 引號包路徑：防空白截斷
     If install Then
-        ws.RegWrite key, exe, "REG_SZ"
+        ws.RegWrite key, exe, "REG_SZ" ' 寫入開機啟動
         LogMsg S_LogAsIn()
     Else
         On Error Resume Next
         Dim cur As String
-        cur = ws.RegRead(key)
+        cur = ws.RegRead(key) ' 先讀：不存在就跳過刪除
         If Err.Number <> 0 Then
             Err.Clear
         Else
             On Error GoTo Fail
-            ws.RegDelete key
+            ws.RegDelete key ' 存在才刪
         End If
         LogMsg S_LogAsRm()
     End If
-    AutostartSet = True
+    AutostartSet = True ' 成功回報真
     Exit Function
 Fail:
     LogMsg S_LogAsErr(Err.Description)
-    AutostartSet = False
+    AutostartSet = False ' 失敗回報假
 End Function
 
 ' 版本字串：vbp 版號 Major.Minor.Revision，Revision 每次編譯自動加一

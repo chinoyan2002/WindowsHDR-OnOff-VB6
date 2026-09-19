@@ -39,10 +39,10 @@ Private Declare Function GetExitCodeProcess Lib "kernel32" (ByVal hProcess As Lo
 Private Declare Function TerminateProcess Lib "kernel32" (ByVal hProcess As Long, ByVal uCode As Long) As Long
 Private Declare Function CloseHandle Lib "kernel32" (ByVal hObject As Long) As Long
 
-Private Const CREATE_NO_WINDOW = &H8000000
-Private Const STARTF_USESHOWWINDOW = &H1
-Private Const SW_HIDE = 0
-Private Const WAIT_OBJECT_0 = 0
+Private Const CREATE_NO_WINDOW = &H8000000 ' 建行程不配視窗
+Private Const STARTF_USESHOWWINDOW = &H1 ' 啟用顯示設定欄位
+Private Const SW_HIDE = 0 ' 隱藏視窗代碼
+Private Const WAIT_OBJECT_0 = 0 ' 等到結束代碼
 
 ' Run hidden via cmd.exe with workDir as cwd. Waits in 500ms slices with
 ' DoEvents so the tray stays responsive. Returns exit code, -1 on fail/timeout.
@@ -52,8 +52,8 @@ Public Function ShellRunHidden(ByVal shellCmd As String, ByVal workDir As String
     On Error GoTo Fail
     Dim si As STARTUPINFO, pi As PROCESS_INFORMATION
     Dim cmd As String, rc As Long, wr As Long, waited As Long
-    cmd = "cmd.exe /s /c """ & shellCmd & """"
-    si.cb = Len(si)
+    cmd = "cmd.exe /s /c """ & shellCmd & """" ' 包 cmd 跑整串：& 符號不斷行
+    si.cb = Len(si) ' 結構大小必填，API 對版用
     si.dwFlags = STARTF_USESHOWWINDOW
     si.wShowWindow = SW_HIDE
     If CreateProcessA(vbNullString, cmd, 0, 0, 0, CREATE_NO_WINDOW, 0, workDir, si, pi) = 0 Then
@@ -62,19 +62,19 @@ Public Function ShellRunHidden(ByVal shellCmd As String, ByVal workDir As String
     End If
     waited = 0
     Do
-        wr = WaitForSingleObject(pi.hProcess, 500)
+        wr = WaitForSingleObject(pi.hProcess, 500) ' 500 毫秒一切片
         If wr = WAIT_OBJECT_0 Then Exit Do
-        DoEvents
-        waited = waited + 500
-    Loop While waited < 120000
-    If wr <> WAIT_OBJECT_0 Then TerminateProcess pi.hProcess, 99
+        DoEvents ' 讓托盤有反應，不凍結
+        waited = waited + 500 ' 累計等待毫秒
+    Loop While waited < 120000 ' 上限 120 秒：防卡死
+    If wr <> WAIT_OBJECT_0 Then TerminateProcess pi.hProcess, 99 ' 逾時殺掉，碼 99 識別
     If wr <> WAIT_OBJECT_0 Then
-        rc = -1
+        rc = -1 ' 逾時或建失敗一律 -1
     Else
-        GetExitCodeProcess pi.hProcess, rc
+        GetExitCodeProcess pi.hProcess, rc ' 取真正結束碼
     End If
-    CloseHandle pi.hThread
-    CloseHandle pi.hProcess
+    CloseHandle pi.hThread ' 收執行緒代碼防漏
+    CloseHandle pi.hProcess ' 收行程代碼防漏
     ShellRunHidden = rc
     Exit Function
 Fail:
