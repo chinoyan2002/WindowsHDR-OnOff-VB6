@@ -1,0 +1,15 @@
+{
+  "_說明": "Language: auto=跟隨系統語系, en=英文, zh=中文. PollSeconds: 偵測間隔秒數. StablePolls: 連續幾次一致才動作. AutoEnabled: true=自動執行, false=只記錄不動作. PowerOff/PowerOn: 螢幕斷電/通電穩定後, 等 DelaySeconds 秒執行的 Shell 命令, 工作目錄=程式目錄. 例: PowerOff.Shell=HDRCmd.exe off, PowerOn.Shell=SetHDR.cmd(自提權腳本).",
+  "Language": "auto",
+  "PollSeconds": 1,
+  "StablePolls": 3,
+  "AutoEnabled": true,
+  "PowerOff": {
+    "DelaySeconds": 1,
+    "Shell": "HDRCmd.exe off"
+  },
+  "PowerOn": {
+    "DelaySeconds": 0,
+    "Shell": "SetHDR.cmd"
+  }
+}
