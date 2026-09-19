@@ -65,4 +65,4 @@ v1.4
 
 版本資訊優先從 Windows Registry 取得，避免 VB6 IDE 的 XP 相容模式造成 5.1.2600 偽版本；HDR API 路徑則直接探測新版 API。仍需在實際 VB6 IDE 與 Windows 11 24H2 / 25H2 環境完成編譯及實機驗證。
 
-底層 API 模組刻意不加入 Timer、WM_DISPLAYCHANGE 或 WM_DEVICECHANGE；若 VMini6 後續需要常駐監控，應在上層加入重新查詢機制。
+底層 API 模組刻意不加入 Timer、WM_DISPLAYCHANGE 或 WM_DEVICECHANGE；
