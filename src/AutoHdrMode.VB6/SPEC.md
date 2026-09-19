@@ -215,6 +215,21 @@ Shell 段：
 
 CLI `FireCli`／`FireTransitionCore` 同語意（blocking 等）。
 
+
+**清卡不是 Shell 的門檻**：驗收通過／驗收失敗＋不清卡／`NativeHDR=""` 略過，都會進 `DoShellStep`；擋得下 Shell 的只有方向停用、自動總開關關閉、排程中途翻轉取消、Shell 空白或目標不存在（後者記一筆跳過，鏈照常收尾）。
+
+### 6.2.2 等待時間表（T0＝偵測確認，通電出貨預設）
+
+| 路徑 | Shell 執行時刻 |
+|------|---------------|
+| 驗收通過 | T0＋DelayHDR(1)＋VerifySeconds(5)＋DelayShell(0) ≈ T0＋6 秒 |
+| 驗收失敗＋不清卡 | 同上，≈ T0＋6 秒 |
+| 驗收失敗＋清卡 | T0＋1＋5＋提權等（≤3 秒）＋DelayAfterClean(15)＋重試（瞬時）＋DelayShell ≈ T0＋24 秒 |
+| `VerifySeconds=0` | T0＋DelayHDR＋DelayShell，直跑 Shell |
+| `NativeHDR=""` | T0＋DelayHDR＋DelayShell（無驗收段） |
+
+每段等待都從上段做完起算（碼表重按），非自偵測起算；`tmrWait` 500ms 切片帶來 ±0.5 秒抖動。
+
 ### 6.3 （已併入 6.2）
 
 ### 6.4 HDR 與 Shell 可組合性
