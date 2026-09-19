@@ -54,6 +54,25 @@ Private Declare Sub Sleep Lib "kernel32" (ByVal dwMilliseconds As Long)
 Private Declare Function RtlGetVersion Lib "ntdll.dll" ( _
     ByRef lpVersionInformation As Any) As Long
 
+' 讀取 Windows Registry，避免 VB6 IDE 的 AppCompat Shim 影響版本判斷。
+Private Declare Function RegOpenKeyExA Lib "advapi32.dll" ( _
+    ByVal hKey As Long, _
+    ByVal lpSubKey As String, _
+    ByVal ulOptions As Long, _
+    ByVal samDesired As Long, _
+    ByRef phkResult As Long) As Long
+
+Private Declare Function RegQueryValueExA Lib "advapi32.dll" ( _
+    ByVal hKey As Long, _
+    ByVal lpValueName As String, _
+    ByVal lpReserved As Long, _
+    ByRef lpType As Long, _
+    ByVal lpData As String, _
+    ByRef lpcbData As Long) As Long
+
+Private Declare Function RegCloseKey Lib "advapi32.dll" ( _
+    ByVal hKey As Long) As Long
+
 '---------------------------------------------------------------------
 ' Win32 錯誤碼
 '---------------------------------------------------------------------
@@ -66,6 +85,15 @@ Private Const ERROR_INSUFFICIENT_BUFFER As Long = 122
 Private Const ERROR_NOT_SUPPORTED As Long = 50
 Private Const ERROR_NOT_FOUND As Long = 1168
 Private Const ERROR_GEN_FAILURE As Long = 31
+
+' Registry 常數。
+Private Const HKEY_LOCAL_MACHINE As Long = &H80000002
+Private Const KEY_READ As Long = &H20019
+Private Const KEY_WOW64_64KEY As Long = &H100
+Private Const REG_SZ As Long = 1
+
+' Windows 版本 Registry 路徑。
+Private Const WINDOWS_CURRENT_VERSION_KEY As String = "SOFTWAREMicrosoftWindows NTCurrentVersion"
 
 '---------------------------------------------------------------------
 ' Display Configuration 常數
@@ -266,60 +294,67 @@ Public Function HDR_GetLastErrorText() As String
 End Function
 
 '=====================================================================
-' 公開函數：取得 Windows Build
+' 公開函數：取得 Windows 版本資訊
 '=====================================================================
 
-' 使用 RtlGetVersion 取得實際 Windows Build。
-' osInfo：RTL_OSVERSIONINFOEXW 的 284-byte Byte Array。
-' result：RtlGetVersion 回傳值。
+' 取得實際 Windows Major / Minor / Build。
+' 優先使用 64-bit Windows 的 CurrentVersion Registry，避免 VB6 IDE 被
+' AppCompat Shim 識別成 Windows XP。
+' Registry 無法讀取時，再退回 RtlGetVersion；但 HDR API 路徑不依賴此結果。
 Public Function HDR_GetWindowsVersionInfo( _
     ByRef MajorVersion As Long, _
     ByRef MinorVersion As Long, _
     ByRef BuildNumber As Long) As Boolean
 
-    Dim osInfo() As Byte           ' RTL_OSVERSIONINFOW 的 20-byte 原始結構。
-    Dim result As Long             ' RtlGetVersion 回傳值。
+    Dim registryVersion As String         ' Registry 的 CurrentVersion。
+    Dim registryBuild As String           ' Registry 的 CurrentBuildNumber。
+    Dim dotPos As Long                   ' CurrentVersion 中的小數點位置。
 
     MajorVersion = 0
     MinorVersion = 0
     BuildNumber = 0
     HDR_GetWindowsVersionInfo = False
 
-    ReDim osInfo(0 To RTL_OSVERSIONINFOW_SIZE - 1)
+    ' 優先從 64-bit Registry View 取得實際系統版本。
+    If HDR_ReadWindowsRegistryVersion(registryVersion, registryBuild) Then
+        dotPos = InStr(1, registryVersion, ".", vbBinaryCompare)
 
-    ' dwOSVersionInfoSize 位於 offset 0，必須先指定結構大小。
-    HDR_WriteLong osInfo, 0, RTL_OSVERSIONINFOW_SIZE
+        If dotPos > 0 Then
+            MajorVersion = CLng(Val(Left$(registryVersion, dotPos - 1)))
+            MinorVersion = CLng(Val(Mid$(registryVersion, dotPos + 1)))
+        Else
+            MajorVersion = CLng(Val(registryVersion))
+            MinorVersion = 0
+        End If
 
-    result = RtlGetVersion(osInfo(0))
+        BuildNumber = CLng(Val(registryBuild))
 
-    If result <> ERROR_SUCCESS Then
-        HDR_SetLastError result, "取得 Windows 版本失敗。"
+        If BuildNumber > 0 Then
+            HDR_ClearLastError
+            HDR_GetWindowsVersionInfo = True
+            Exit Function
+        End If
+    End If
+
+    ' Registry 失敗時才退回 RtlGetVersion；這裡只是版本診斷，不負責 HDR API 路徑選擇。
+    If HDR_GetRtlVersionInfo(MajorVersion, MinorVersion, BuildNumber) Then
+        HDR_ClearLastError
+        HDR_GetWindowsVersionInfo = True
         Exit Function
     End If
 
-    ' RTL_OSVERSIONINFOW 欄位：
-    ' offset 0  = dwOSVersionInfoSize
-    ' offset 4  = dwMajorVersion
-    ' offset 8  = dwMinorVersion
-    ' offset 12 = dwBuildNumber
-    ' offset 16 = dwPlatformId
-    MajorVersion = HDR_ReadLong(osInfo, 4)
-    MinorVersion = HDR_ReadLong(osInfo, 8)
-    BuildNumber = HDR_ReadLong(osInfo, 12)
-
-    HDR_ClearLastError
-    HDR_GetWindowsVersionInfo = True
+    HDR_SetLastError ERROR_GEN_FAILURE, "無法取得 Windows 版本資訊。"
 End Function
 
 '=====================================================================
 ' 公開函數：取得 Windows Build
 '=====================================================================
 
-' 只回傳目前 Windows 的 Build Number。
+' 回傳實際 Windows Build；優先使用 Registry。
 Public Function HDR_GetWindowsBuild() As Long
-    Dim majorVersion As Long         ' Windows Major Version。
-    Dim minorVersion As Long         ' Windows Minor Version。
-    Dim buildNumber As Long          ' Windows Build Number。
+    Dim majorVersion As Long             ' Windows Major Version。
+    Dim minorVersion As Long             ' Windows Minor Version。
+    Dim buildNumber As Long              ' Windows Build Number。
 
     If HDR_GetWindowsVersionInfo(majorVersion, minorVersion, buildNumber) Then
         HDR_GetWindowsBuild = buildNumber
@@ -329,34 +364,120 @@ Public Function HDR_GetWindowsBuild() As Long
 End Function
 
 '=====================================================================
-' 公開函數：判斷是否使用 Windows 11 24H2+ API
+' 公開函數：取得 RtlGetVersion 原始結果
 '=====================================================================
 
-' 依 Windows Build 判斷是否可使用新版 HDR API。
-Public Function HDR_IsWindows11_24H2() As Boolean
-    Dim majorVersion As Long         ' Windows Major Version。
-    Dim minorVersion As Long         ' Windows Minor Version。
-    Dim buildNumber As Long          ' Windows Build Number。
+' 直接取得 RtlGetVersion 回傳結果，提供診斷用途。
+' 注意：VB6 IDE 可能受 AppCompat Shim 影響，因此此結果不能作為 HDR API 路徑判斷。
+Public Function HDR_GetRtlVersionInfo( _
+    ByRef MajorVersion As Long, _
+    ByRef MinorVersion As Long, _
+    ByRef BuildNumber As Long) As Boolean
 
-    If Not HDR_GetWindowsVersionInfo(majorVersion, minorVersion, buildNumber) Then
-        HDR_IsWindows11_24H2 = False
+    Dim osInfo() As Byte            ' RTL_OSVERSIONINFOW 的 20-byte Buffer。
+    Dim result As Long              ' RtlGetVersion 回傳值。
+
+    MajorVersion = 0
+    MinorVersion = 0
+    BuildNumber = 0
+
+    ReDim osInfo(0 To RTL_OSVERSIONINFOW_SIZE - 1)
+
+    HDR_WriteLong osInfo, 0, RTL_OSVERSIONINFOW_SIZE
+
+    result = RtlGetVersion(osInfo(0))
+
+    If result <> ERROR_SUCCESS Then
+        HDR_SetLastError result, "RtlGetVersion 取得版本失敗。"
         Exit Function
     End If
 
-    ' Windows 10 / 11 都使用 Major=10；再以 Build 判斷 24H2+ HDR API。
-    HDR_IsWindows11_24H2 = (majorVersion >= 10 And buildNumber >= WINDOWS_11_24H2_BUILD)
+    ' RTL_OSVERSIONINFOW：
+    ' offset 4  = Major
+    ' offset 8  = Minor
+    ' offset 12 = Build
+    MajorVersion = HDR_ReadLong(osInfo, 4)
+    MinorVersion = HDR_ReadLong(osInfo, 8)
+    BuildNumber = HDR_ReadLong(osInfo, 12)
+
+    HDR_GetRtlVersionInfo = True
+End Function
+
+'=====================================================================
+' 公開函數：判斷新版 HDR API 是否真的可用
+'=====================================================================
+
+' 直接探測 DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO_2。
+' 這是 HDR API 路徑的真正判斷依據，不使用 Windows 版本號。
+Public Function HDR_IsNewHDRApiAvailable() As Boolean
+    Dim pathBuffer() As Byte             ' Active Path Buffer。
+    Dim modeBuffer() As Byte             ' Mode Buffer。
+    Dim pathCount As Long                ' Active Path 數量。
+    Dim modeCount As Long                ' Mode 數量。
+    Dim i As Long                        ' Path 迴圈索引。
+    Dim offset As Long                   ' Path 在 Buffer 的起始位置。
+    Dim adapterLow As Long               ' Adapter LUID Low。
+    Dim adapterHigh As Long              ' Adapter LUID High。
+    Dim targetId As Long                 ' Target ID。
+    Dim packet(0 To DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO_2_SIZE - 1) As Byte ' 新版資訊 Packet。
+    Dim result As Long                   ' API 回傳值。
+
+    HDR_IsNewHDRApiAvailable = False
+
+    If Not HDR_QueryActiveDisplays(pathBuffer, pathCount, modeBuffer, modeCount) Then
+        Exit Function
+    End If
+
+    If pathCount <= 0 Then Exit Function
+
+    ' 逐一嘗試 active Target；只要任一 Target 能接受 type 15，就代表新版 API 存在。
+    For i = 0 To pathCount - 1
+        offset = i * DISPLAYCONFIG_PATH_INFO_SIZE
+
+        adapterLow = HDR_ReadLong(pathBuffer, offset + 20)
+        adapterHigh = HDR_ReadLong(pathBuffer, offset + 24)
+        targetId = HDR_ReadLong(pathBuffer, offset + 28)
+
+        HDR_InitHeader packet, _
+                       DISPLAYCONFIG_DEVICE_INFO_GET_ADVANCED_COLOR_INFO_2, _
+                       DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO_2_SIZE, _
+                       adapterLow, _
+                       adapterHigh, _
+                       targetId
+
+        result = DisplayConfigGetDeviceInfo(packet(0))
+
+        If result = ERROR_SUCCESS Then
+            HDR_ClearLastError
+            HDR_IsNewHDRApiAvailable = True
+            Exit Function
+        End If
+    Next i
+
+    ' 探測失敗本身不是程式錯誤；由呼叫端決定是否改走舊版相容 API。
+    HDR_ClearLastError
+End Function
+
+'=====================================================================
+' 公開函數：舊函數名稱相容包裝
+'=====================================================================
+
+' 保留原公開函數名稱，避免既有程式碼失效。
+' 實際上已改為「直接探測新版 HDR API」，不再相信 Windows 版本號。
+Public Function HDR_IsNewHDRApiAvailable() As Boolean
+    HDR_IsWindows11_24H2 = HDR_IsNewHDRApiAvailable()
 End Function
 
 '=====================================================================
 ' 公開函數：取得目前 API 模式文字
 '=====================================================================
 
-' 回傳目前程式使用的 HDR API 路徑。
+' 顯示目前真正被選用的 API 路徑。
 Public Function HDR_GetApiModeText() As String
-    If HDR_IsWindows11_24H2() Then
-        HDR_GetApiModeText = "Windows 11 24H2 以上：新版 HDR API"
+    If HDR_IsNewHDRApiAvailable() Then
+        HDR_GetApiModeText = "新版 HDR API（已直接探測可用）"
     Else
-        HDR_GetApiModeText = "舊版 Windows：Advanced Color 相容 API"
+        HDR_GetApiModeText = "舊版 Advanced Color 相容 API（新版 HDR API 無法使用）"
     End If
 End Function
 
@@ -392,11 +513,15 @@ Public Function HDR_GetDisplays(ByRef Displays() As HDR_DISPLAY_INFO) As Boolean
     Dim pathCount As Long            ' Active Path 數量。
     Dim modeCount As Long            ' Mode Info 數量。
     Dim i As Long                    ' 顯示器迴圈索引。
+    Dim useNewHDRApi As Boolean      ' 是否已直接探測到新版 HDR API。
 
     Erase Displays
     HDR_ClearLastError
 
     If Not HDR_QueryActiveDisplays(pathBuffer, pathCount, modeBuffer, modeCount) Then Exit Function
+
+    ' 不依賴 OS 版本號，直接探測新版 HDR API。
+    useNewHDRApi = HDR_ProbeNewHDRApiFromPathBuffer(pathBuffer, pathCount)
 
     If pathCount <= 0 Then
         HDR_GetDisplays = True
@@ -406,7 +531,7 @@ Public Function HDR_GetDisplays(ByRef Displays() As HDR_DISPLAY_INFO) As Boolean
     ReDim Displays(0 To pathCount - 1)
 
     For i = 0 To pathCount - 1
-        Displays(i) = HDR_CreateDisplayInfo(i, pathBuffer)
+        Displays(i) = HDR_CreateDisplayInfo(i, pathBuffer, useNewHDRApi)
     Next i
 
     HDR_GetDisplays = True
@@ -514,7 +639,7 @@ Public Function HDR_Toggle() As Boolean
     firstError = ERROR_SUCCESS
 
     For i = LBound(displays) To UBound(displays)
-        If HDR_IsWindows11_24H2() Then
+        If HDR_IsNewHDRApiAvailable() Then
             ' 新版 API 必須有可確認的 HDR capability。
             If Not displays(i).HDRCapabilityKnown Or Not displays(i).HDRSupported Then
                 okAll = False
@@ -651,13 +776,59 @@ Private Function HDR_QueryActiveDisplays( _
 End Function
 
 '=====================================================================
+' 私有函數：從既有 Path Buffer 探測新版 HDR API
+'=====================================================================
+
+' 已經有 QueryDisplayConfig 結果時，直接使用其中的 Target 逐一測試 type 15。
+' 這樣 HDR_GetDisplays 不需要再次建立 Display Configuration Buffer。
+Private Function HDR_ProbeNewHDRApiFromPathBuffer( _
+    ByRef pathBuffer() As Byte, _
+    ByVal pathCount As Long) As Boolean
+
+    Dim i As Long                  ' Path 索引。
+    Dim offset As Long             ' Path 起始 offset。
+    Dim adapterLow As Long         ' Adapter LUID Low。
+    Dim adapterHigh As Long        ' Adapter LUID High。
+    Dim targetId As Long           ' Target ID。
+    Dim packet(0 To DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO_2_SIZE - 1) As Byte ' 新版 API Packet。
+    Dim result As Long             ' API 回傳值。
+
+    HDR_ProbeNewHDRApiFromPathBuffer = False
+
+    For i = 0 To pathCount - 1
+        offset = i * DISPLAYCONFIG_PATH_INFO_SIZE
+
+        adapterLow = HDR_ReadLong(pathBuffer, offset + 20)
+        adapterHigh = HDR_ReadLong(pathBuffer, offset + 24)
+        targetId = HDR_ReadLong(pathBuffer, offset + 28)
+
+        HDR_InitHeader packet, _
+                       DISPLAYCONFIG_DEVICE_INFO_GET_ADVANCED_COLOR_INFO_2, _
+                       DISPLAYCONFIG_GET_ADVANCED_COLOR_INFO_2_SIZE, _
+                       adapterLow, _
+                       adapterHigh, _
+                       targetId
+
+        result = DisplayConfigGetDeviceInfo(packet(0))
+
+        If result = ERROR_SUCCESS Then
+            HDR_ProbeNewHDRApiFromPathBuffer = True
+            Exit Function
+        End If
+    Next i
+End Function
+
+'=====================================================================
 ' 私有函數：建立單一顯示器資訊
 '=====================================================================
 
 ' 從 DISPLAYCONFIG_PATH_INFO Byte Array 建立 HDR_DISPLAY_INFO。
 ' Index：目前 active path 的陣列索引。
 ' pathBuffer：QueryDisplayConfig 回傳的 Path Buffer。
-Private Function HDR_CreateDisplayInfo(ByVal Index As Long, ByRef pathBuffer() As Byte) As HDR_DISPLAY_INFO
+Private Function HDR_CreateDisplayInfo( _
+    ByVal Index As Long, _
+    ByRef pathBuffer() As Byte, _
+    ByVal UseNewHDRApi As Boolean) As HDR_DISPLAY_INFO
     Dim info As HDR_DISPLAY_INFO       ' 輸出的顯示器資訊。
     Dim offset As Long                 ' 此 Path 在 Buffer 中的起始 offset。
     Dim pathFlags As Long              ' Display Path flags。
@@ -694,7 +865,7 @@ Private Function HDR_CreateDisplayInfo(ByVal Index As Long, ByRef pathBuffer() A
                     info.FriendlyNameForced, _
                     nameError)
 
-    If HDR_IsWindows11_24H2() Then
+    If UseNewHDRApi Then
         Call HDR_ReadDisplayStatus2(info)
     Else
         Call HDR_ReadDisplayStatusLegacy(info)
@@ -827,7 +998,7 @@ Private Function HDR_SetDisplay(ByRef info As HDR_DISPLAY_INFO, ByVal EnableHDR 
     Dim packetLegacy(0 To DISPLAYCONFIG_SET_ADVANCED_COLOR_STATE_SIZE - 1) As Byte ' 舊版 Packet。
     Dim result As Long                       ' API 回傳值。
 
-    If HDR_IsWindows11_24H2() Then
+    If HDR_IsNewHDRApiAvailable() Then
         ' 新版 API 不得 fallback 到舊版 Advanced Color API。
         If Not info.HDRCapabilityKnown Then
             HDR_SetLastError ERROR_NOT_SUPPORTED, "無法取得此顯示器的 HDR 能力。"
@@ -918,7 +1089,7 @@ Private Function HDR_SetAllDisplays(ByVal EnableHDR As Boolean) As Boolean
     firstError = ERROR_SUCCESS
 
     For i = LBound(displays) To UBound(displays)
-        If HDR_IsWindows11_24H2() Then
+        If HDR_IsNewHDRApiAvailable() Then
             If EnableHDR And Not displays(i).HDRSupported Then
                 okAll = False
                 If firstError = ERROR_SUCCESS Then firstError = ERROR_NOT_SUPPORTED
@@ -979,7 +1150,7 @@ Private Function HDR_VerifyDisplay(ByRef OriginalInfo As HDR_DISPLAY_INFO, ByVal
             If found Then
                 OriginalInfo = current
 
-                If HDR_IsWindows11_24H2() Then
+                If HDR_IsNewHDRApiAvailable() Then
                     If ExpectedHDR Then
                         If current.HDRActive Then
                             HDR_VerifyDisplay = True
@@ -1006,7 +1177,7 @@ Private Function HDR_VerifyDisplay(ByRef OriginalInfo As HDR_DISPLAY_INFO, ByVal
         Sleep 100
     Next retry
 
-    If HDR_IsWindows11_24H2() Then
+    If HDR_IsNewHDRApiAvailable() Then
         HDR_SetLastError ERROR_GEN_FAILURE, "設定完成，但重新查詢後 HDR 實際狀態未符合預期。"
     Else
         HDR_SetLastError ERROR_GEN_FAILURE, "設定完成，但重新查詢後 Advanced Color 實際狀態未符合預期。"
@@ -1177,6 +1348,105 @@ Private Function HDR_TestBit(ByVal value As Long, ByVal bitIndex As Long) As Boo
         Case Else
             HDR_TestBit = False
     End Select
+End Function
+
+'=====================================================================
+' 私有函數：讀取 Windows Registry 版本
+'=====================================================================
+
+' 從 64-bit Windows Registry 讀取 CurrentVersion 與 CurrentBuildNumber。
+' 32-bit VB6 使用 KEY_WOW64_64KEY，確保 IDE 與編譯後 EXE 都讀到相同的系統版本來源。
+Private Function HDR_ReadWindowsRegistryVersion( _
+    ByRef CurrentVersion As String, _
+    ByRef CurrentBuildNumber As String) As Boolean
+
+    Dim hKey As Long                ' Registry Key Handle。
+    Dim result As Long              ' Registry API 回傳值。
+    Dim valueType As Long           ' Registry Value Type。
+    Dim dataLength As Long          ' Registry Value Buffer 長度。
+    Dim dataBuffer As String        ' Registry 字串資料 Buffer。
+
+    CurrentVersion = vbNullString
+    CurrentBuildNumber = vbNullString
+    hKey = 0
+
+    ' 優先指定 64-bit Registry View；VB6 本身是 32-bit。
+    result = RegOpenKeyExA( _
+                HKEY_LOCAL_MACHINE, _
+                WINDOWS_CURRENT_VERSION_KEY, _
+                0, _
+                KEY_READ Or KEY_WOW64_64KEY, _
+                hKey)
+
+    If result <> ERROR_SUCCESS Then
+        ' 在 32-bit Windows 或某些特殊環境下，退回一般 Registry View。
+        result = RegOpenKeyExA( _
+                    HKEY_LOCAL_MACHINE, _
+                    WINDOWS_CURRENT_VERSION_KEY, _
+                    0, _
+                    KEY_READ, _
+                    hKey)
+
+        If result <> ERROR_SUCCESS Then Exit Function
+    End If
+
+    ' 取得 CurrentVersion，例如 10.0。
+    dataBuffer = String$(64, vbNullChar)
+    dataLength = Len(dataBuffer)
+    valueType = 0
+
+    result = RegQueryValueExA( _
+                hKey, _
+                "CurrentVersion", _
+                0, _
+                valueType, _
+                dataBuffer, _
+                dataLength)
+
+    If result = ERROR_SUCCESS And valueType = REG_SZ Then
+        CurrentVersion = HDR_TrimNull(dataBuffer)
+    End If
+
+    ' 取得 CurrentBuildNumber，例如 26200。
+    dataBuffer = String$(64, vbNullChar)
+    dataLength = Len(dataBuffer)
+    valueType = 0
+
+    result = RegQueryValueExA( _
+                hKey, _
+                "CurrentBuildNumber", _
+                0, _
+                valueType, _
+                dataBuffer, _
+                dataLength)
+
+    If result = ERROR_SUCCESS And valueType = REG_SZ Then
+        CurrentBuildNumber = HDR_TrimNull(dataBuffer)
+    End If
+
+    Call RegCloseKey(hKey)
+
+    HDR_ReadWindowsRegistryVersion = _
+        (Len(CurrentBuildNumber) > 0 And Val(CurrentBuildNumber) > 0)
+End Function
+
+'=====================================================================
+' 私有函數：去除 Windows Registry 字串結尾的 NULL
+'=====================================================================
+
+' 將固定長度 Registry Buffer 裡的 NULL 結尾移除。
+Private Function HDR_TrimNull(ByVal valueText As String) As String
+    Dim nullPos As Long             ' 第一個 NULL 字元的位置。
+
+    nullPos = InStr(1, valueText, vbNullChar, vbBinaryCompare)
+
+    If nullPos > 0 Then
+        HDR_TrimNull = Left$(valueText, nullPos - 1)
+    Else
+        HDR_TrimNull = valueText
+    End If
+
+    HDR_TrimNull = Trim$(HDR_TrimNull)
 End Function
 
 '=====================================================================
