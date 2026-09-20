@@ -76,10 +76,10 @@ End Function
 ' 用途：--probe：輸出通電與待命台數；回傳：0開 1關 3待命
 Private Function ProbeRun() As Long
     Dim n As Long, sb As Long
-    n = WmiPhysicalCount()
-    sb = WmiStandbyCount()
+    n = DdcOnCount()
+    sb = DdcStandbyCount()
     LogMsg AppVersionLine() ' CLI 先印版本： freshness marker
-    LogMsg S_LogProbe(n, sb) ' 探測結果寫檔，結束碼看數字
+    LogMsg S_LogProbe(n, sb, DdcD6Summary()) ' 探測結果＋D6 原始值
     If n > 0 Then
         ProbeRun = 0
     ElseIf sb > 0 Then

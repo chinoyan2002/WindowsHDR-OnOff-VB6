@@ -20,7 +20,7 @@
 
 - 不依賴專案外自備 exe（唯一系統工具：`pnputil`，僅清虛擬卡時使用）。
 - 斷電當下螢幕常已無 active display path，原生關 HDR 可能只能「盡力＋快取目標」；通電會再強制設定。
-- 遠端桌面虛擬螢幕不應被 WMI 計為實體螢幕（查詢來源見 §5）。
+- 遠端桌面虛擬螢幕不應被 DDC計為實體螢幕（查詢來源見 §5）。
 
 ---
 
@@ -50,7 +50,7 @@ Module=modMain.bas        ' AppBootstrap、CLI、開機自啟、FireCli
 Module=modLang.bas        ' 中英字串
 Module=modConfig.bas      ' INI 讀寫、g_FirstRun、ShellTargetExists
 Module=modLog.bas         ' autohdrmode.log 附加寫入
-Module=modWMI.bas         ' 實體螢幕計數
+Module=modDDC.bas         ' 實體螢幕計數
 Module=modShell.bas       ' ShellRunHidden
 Module=modWindowsHDR.bas  ' 原生 HDR API
 Module=modCleanVirtual.bas' 清虛擬卡 + IsElevated
@@ -111,7 +111,7 @@ frmSettings.Form_Load
 
 ---
 
-## 5. 實體螢幕偵測（modWMI，DDC/CI D6）
+## 5. 實體螢幕偵測（modDDC，DDC/CI D6）
 
 ```vb
 WmiPhysicalCount() As Long    ' D6=1 通電台數（每次呼叫重新列舉）
@@ -288,7 +288,7 @@ AutoHdrMode.exe --clean
 
 1. `Not IsElevated` → `ShellExecute runas` 自己 `--clean` 後結束（父行程若已是 elevate 等待則等子行程）。
 2. 已 elevate → `CleanVirtualGpus`：
-   - WMI `Win32_PnPEntity`，`PNPClass='Display'`
+   - DDC 偵測出錯，`PNPClass='Display'`
    - Friendly/Name **不含** AMD / NVIDIA / Intel → `pnputil /remove-device`
    - 優先 `%WINDIR%\sysnative\pnputil.exe` 否則 System32
    - 最多約 10 秒輪詢直到無虛擬卡或逾時
@@ -485,13 +485,13 @@ Tooltip：實體螢幕開／關。
 ## 15. 已知限制（校驗時勿當回歸 bug）
 
 1. 螢幕已斷電後，DisplayConfig 可能無 active path；關 HDR 無法保證系統 UI 切換與通電前一致，靠通電強制 ON/OFF 策略補回。
-2. WMI 失敗被當作斷電是設計行為。
+2. DDC失敗被當作斷電是設計行為。
 3. VB6 托盤在部分高 DPI／遠端桌面環境仍可能異常；主窗作 Startup 並 Hide 是為降低此問題。
 4. 源碼必須 CP950+CRLF；UTF-8 會導致繁中機亂碼或無法載入 frm。
 5. 通電後誤報斷電（2026-09-20 實測）：只按一次開機，log 出現開→關→開。還原：14:37:19 讀到 D6=1 記開；約 6 秒內連續 2 輪讀到 0 記關（誤報）；再 6 秒讀回 D6=1 記開並取消關排程。
    兇手（按機率）：(1) 開機暖機／訊號重鎖（link training、HDCP 交握）期間 DDC 不回應，字面關規則（問不到＝關）直接判斷電；(2) 無訊號擺盪期連 D6 都不回；(3) 線材抖動（低）。
    當時 `DelayHDR=30` 救場：誤報關鏈 6 秒後被開鏈覆寫取消，HDR 沒被誤動；若 DelayHDR 設 3 秒就會誤關再重開。
-   候選處置：A. 非對稱穩定（開維持 2 次，關改 4~5 次）；B. 翻案 Q2（問不到改判 HOLD，只認 D6=4/5 硬關）；C. modWMI 加 breakdown 計數（問失敗／回 4or5／待命各幾台），0 台時記一行供下次診斷。傾向 C＋A，B 待數據。狀態：待定。
+   候選處置：A. 非對稱穩定（開維持 2 次，關改 4~5 次）；B. 翻案 Q2（問不到改判 HOLD，只認 D6=4/5 硬關）；C. modDDC 加 breakdown 計數（問失敗／回 4or5／待命各幾台），0 台時記一行供下次診斷。傾向 C＋A，B 待數據。狀態：待定。
 
 ---
 

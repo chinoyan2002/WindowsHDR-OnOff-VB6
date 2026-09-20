@@ -69,18 +69,18 @@ End Function
 Public Function S_LogAutoToggle(ByVal autoOn As Boolean) As String ' 記錄：自動開關異動
     If g_Chinese Then S_LogAutoToggle = "自動切換改為：" & IIf(autoOn, "開", "關") Else S_LogAutoToggle = "Auto switch: " & IIf(autoOn, "on", "off")
 End Function
-Public Function S_LogInit(ByVal isOn As Boolean, ByVal n As Long) As String ' 記錄：初始狀態
+Public Function S_LogInit(ByVal isOn As Boolean, ByVal n As Long, ByVal d6 As String) As String ' 記錄：初始狀態
     If g_Chinese Then
-        S_LogInit = "一開始螢幕是" & IIf(isOn, "開", "關") & "（亮著 " & n & " 台）"
+        S_LogInit = "一開始螢幕是" & IIf(isOn, "開", "關") & "（亮著 " & n & " 台，" & d6 & "）"
     Else
-        S_LogInit = "At start, display is " & IIf(isOn, "ON", "OFF") & " (" & n & " lit)"
+        S_LogInit = "At start, display is " & IIf(isOn, "ON", "OFF") & " (" & n & " lit, " & d6 & ")"
     End If
 End Function
-Public Function S_LogEvent(ByVal isOn As Boolean, ByVal n As Long) As String ' 記錄：翻轉事件
+Public Function S_LogEvent(ByVal isOn As Boolean, ByVal n As Long, ByVal d6 As String) As String ' 記錄：翻轉事件
     If g_Chinese Then
-        S_LogEvent = "偵測到螢幕：" & IIf(isOn, "開", "關") & "（亮著 " & n & " 台）"
+        S_LogEvent = "偵測到螢幕：" & IIf(isOn, "開", "關") & "（亮著 " & n & " 台，" & d6 & "）"
     Else
-        S_LogEvent = "Display detected: " & IIf(isOn, "ON", "OFF") & " (" & n & " lit)"
+        S_LogEvent = "Display detected: " & IIf(isOn, "ON", "OFF") & " (" & n & " lit, " & d6 & ")"
     End If
 End Function
 Public Function S_LogDirDisabled(ByVal isOn As Boolean) As String ' 記錄：方向被停用
@@ -195,8 +195,8 @@ End Function
 Public Function S_LogPhaseDone(ByVal isOn As Boolean) As String ' 記錄：整鏈完成
     If g_Chinese Then S_LogPhaseDone = IIf(isOn, "通電", "斷電") & "流程結束" Else S_LogPhaseDone = IIf(isOn, "Power-on", "Power-off") & " done"
 End Function
-Public Function S_LogWmiErr(ByVal m As String) As String ' 記錄：偵測錯誤（舊名保留）
-    If g_Chinese Then S_LogWmiErr = "螢幕偵測出錯（DDC）：" & m Else S_LogWmiErr = "Display probe error (DDC): " & m
+Public Function S_LogDdcErr(ByVal m As String) As String ' 記錄：偵測錯誤（舊名保留）
+    If g_Chinese Then S_LogDdcErr = "螢幕偵測出錯（DDC）：" & m Else S_LogDdcErr = "Display probe error (DDC): " & m
 End Function
 Public Function S_LogPollErr(ByVal m As String) As String ' 記錄：輪詢異常
     If g_Chinese Then S_LogPollErr = "偵測出錯：" & m Else S_LogPollErr = "Probe error: " & m
@@ -207,8 +207,8 @@ End Function
 Public Function S_LogOpenLogErr(ByVal m As String) As String ' 記錄：開記錄檔失敗
     If g_Chinese Then S_LogOpenLogErr = "打不開記錄資料夾：" & m Else S_LogOpenLogErr = "Cannot open log folder: " & m
 End Function
-Public Function S_LogProbe(ByVal onN As Long, ByVal sbN As Long) As String ' 記錄：探測結果行
-    If g_Chinese Then S_LogProbe = "手動探測：亮著 " & onN & " 台，待命 " & sbN & " 台" Else S_LogProbe = "Probe: " & onN & " lit, " & sbN & " standby"
+Public Function S_LogProbe(ByVal onN As Long, ByVal sbN As Long, ByVal d6 As String) As String ' 記錄：探測結果行
+    If g_Chinese Then S_LogProbe = "手動探測：亮著 " & onN & " 台，待命 " & sbN & " 台，" & d6 Else S_LogProbe = "Probe: " & onN & " lit, " & sbN & " standby, " & d6
 End Function
 Public Function S_LogAsIn() As String ' 記錄：自啟寫入
     If g_Chinese Then S_LogAsIn = "開機自動啟動：已寫入" Else S_LogAsIn = "Autostart: on"
@@ -256,8 +256,8 @@ Public Function S_TipStandby() As String ' 懸停：待命中提示
     If g_Chinese Then S_TipStandby = "AutoHdrMode：螢幕待命中" Else S_TipStandby = "AutoHdrMode: display STANDBY"
 End Function
 
-Public Function S_LogHoldStandby(ByVal onN As Long, ByVal sbN As Long) As String ' 記錄：待命凍結
-    If g_Chinese Then S_LogHoldStandby = "螢幕待命中，先不動（亮著 " & onN & " 台，待命 " & sbN & " 台）" Else S_LogHoldStandby = "Standby, holding (" & onN & " lit, " & sbN & " standby)"
+Public Function S_LogHoldStandby(ByVal onN As Long, ByVal sbN As Long, ByVal d6 As String) As String ' 記錄：待命凍結
+    If g_Chinese Then S_LogHoldStandby = "螢幕待命中，先不動（亮著 " & onN & " 台，待命 " & sbN & " 台，" & d6 & "）" Else S_LogHoldStandby = "Standby, holding (" & onN & " lit, " & sbN & " standby, " & d6 & ")"
 End Function
 
 Public Function S_LogWaitShell(ByVal secs As Long) As String ' 記錄：Shell 前等待秒數

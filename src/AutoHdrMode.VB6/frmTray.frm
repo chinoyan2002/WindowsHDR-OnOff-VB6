@@ -213,14 +213,16 @@ End Function
 Private Sub PollOnce()
     On Error GoTo Fail
     Dim n As Long, sb As Long
-    n = WmiPhysicalCount() ' 通電台數（內含重新列舉）
-    sb = WmiStandbyCount() ' 待命台數（讀上次列舉快取）
+    Dim d6s As String
+    n = DdcOnCount() ' 通電台數（內含重新列舉）
+    sb = DdcStandbyCount() ' 待命台數（讀上次列舉快取）
+    d6s = DdcD6Summary() ' 本輪各台 D6 原始值，事件記錄用
     If n = 0 And sb > 0 Then
         TrayTip S_TipStandby()
         If Not m_holdLogged Then
             m_holdLogged = True
-            LogMsg S_LogHoldStandby(n, sb)
-            Call TrayBalloon(S_TipStandby(), S_LogHoldStandby(n, sb))
+            LogMsg S_LogHoldStandby(n, sb, d6s)
+            Call TrayBalloon(S_TipStandby(), S_LogHoldStandby(n, sb, d6s))
         End If
         Exit Sub ' 凍結：不碰候選與計數
     End If
@@ -237,13 +239,13 @@ Private Sub PollOnce()
     If m_stable < g_StableN Then Exit Sub ' 未達穩定次數：繼續等
     If m_lastSeen = -1 Then
         m_lastSeen = PresentInt(present)
-        LogMsg S_LogInit(present, n)
+        LogMsg S_LogInit(present, n, d6s)
         Exit Sub
     End If
     If m_lastSeen = PresentInt(present) Then Exit Sub ' 無翻轉：收工
     m_lastSeen = PresentInt(present)
-    LogMsg S_LogEvent(present, n)
-    Call TrayBalloon(S_TipState(present), S_LogEvent(present, n))
+    LogMsg S_LogEvent(present, n, d6s)
+    Call TrayBalloon(S_TipState(present), S_LogEvent(present, n, d6s))
     If Not g_AutoOn Then Exit Sub ' 自動關閉：只更新狀態提示
     If present Then
         If Not g_PowerOn.Enabled Then LogMsg S_LogDirDisabled(True): Exit Sub
