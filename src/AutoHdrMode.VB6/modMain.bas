@@ -187,7 +187,7 @@ Private Function FireCli(ByVal wantOn As Boolean) As Long
         If cfg.ShellTimeout <= 0 Then LogMsg S_LogShellLaunch() Else LogMsg S_LogShellRun(rc) ' 0 秒放生記啟動，否則記結束碼
     End If
 
-    LogMsg S_LogPhaseDone(wantOn) ' 整鏈完成記一筆
+    LogMsg S_LogPhaseDone(wantOn, DisplayName0()) ' 整鏈完成記一筆
     FireCli = 0
     Exit Function
 Fail:

@@ -239,13 +239,13 @@ Private Sub PollOnce()
     If m_stable < g_StableN Then Exit Sub ' 未達穩定次數：繼續等
     If m_lastSeen = -1 Then
         m_lastSeen = PresentInt(present)
-        LogMsg S_LogInit(present, n, d6s)
+        LogMsg S_LogInit(present, d6s, DisplayName0())
         Exit Sub
     End If
     If m_lastSeen = PresentInt(present) Then Exit Sub ' 無翻轉：收工
     m_lastSeen = PresentInt(present)
-    LogMsg S_LogEvent(present, n, d6s)
-    Call TrayBalloon(S_TipState(present), S_LogEvent(present, n, d6s))
+    LogMsg S_LogEvent(present, d6s, DisplayName0())
+    Call TrayBalloon(S_TipState(present), S_LogEvent(present, d6s, DisplayName0()))
     If Not g_AutoOn Then Exit Sub ' 自動關閉：只更新狀態提示
     If present Then
         If Not g_PowerOn.Enabled Then LogMsg S_LogDirDisabled(True): Exit Sub
@@ -432,8 +432,8 @@ Private Sub DoShellStep(ByVal wantOn As Boolean)
         rc = ShellRunHidden(cfg.Shell, g_WorkDir, cfg.ShellTimeout) ' 工作目錄跑，結束碼記檔
         If cfg.ShellTimeout <= 0 Then LogMsg S_LogShellLaunch() Else LogMsg S_LogShellRun(rc) ' 0 秒放生記啟動，否則記結束碼
     End If
-    Call TrayBalloon(S_TipState(wantOn), S_LogPhaseDone(wantOn))
-    LogMsg S_LogPhaseDone(wantOn)
+    Call TrayBalloon(S_TipState(wantOn), S_LogPhaseDone(wantOn, DisplayName0()))
+    LogMsg S_LogPhaseDone(wantOn, DisplayName0())
     FinishPhase
     Exit Sub
 Fail:

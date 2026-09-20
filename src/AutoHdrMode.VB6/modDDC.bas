@@ -18,6 +18,7 @@ Private m_PowerOnCount As Long                                                  
 Private m_StandbyCount As Long
 Private m_D6N As Long
 Private m_D6Vals(7) As Long                                                  ' 待命中台數
+Private m_CachedName As String
 
 
 
@@ -65,9 +66,14 @@ Public Function MonitorEnumProc(ByVal hMonitor As Long, ByVal hdcMonitor As Long
 End Function
 
 ' 用途：回傳本次列舉各台 D6 原始值，如 D6=[1]、D6=[問不到]；須先呼叫 DdcOnCount
+' 用途：本次列舉 D6 原始值；單台純量（D6=1／D6=問不到），多台列表；須先呼叫 DdcOnCount
 Public Function DdcD6Summary() As String
     Dim i As Long, s As String, v As Long
     If m_D6N <= 0 Then DdcD6Summary = "D6=[未列舉]": Exit Function
+    If m_D6N = 1 Then
+        If m_D6Vals(0) < 0 Then DdcD6Summary = "D6=問不到" Else DdcD6Summary = "D6=" & CStr(m_D6Vals(0))
+        Exit Function
+    End If
     s = ""
     For i = 0 To m_D6N - 1
         v = m_D6Vals(i)
@@ -77,3 +83,19 @@ Public Function DdcD6Summary() As String
     DdcD6Summary = "D6=[" & s & "]"
 End Function
 
+
+
+' 用途：取 0 號螢幕名稱；成功寫入快取，失敗回快取，再沒有回「螢幕」
+' 注意：只在事件／初始／收尾呼叫，不進每輪 poll
+Public Function DisplayName0() As String
+    Dim ds() As HDR_DISPLAY_INFO
+    Dim nm As String
+    On Error Resume Next
+    Err.Clear
+    If HDR_GetDisplays(ds) Then
+        nm = Trim$(ds(0).Name)
+        If Err.Number = 0 And Len(nm) > 0 And Left$(nm, 3) <> "???" Then m_CachedName = nm
+    End If
+    Err.Clear
+    If Len(m_CachedName) > 0 Then DisplayName0 = m_CachedName Else DisplayName0 = "螢幕"
+End Function

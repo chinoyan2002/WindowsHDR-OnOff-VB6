@@ -69,18 +69,18 @@ End Function
 Public Function S_LogAutoToggle(ByVal autoOn As Boolean) As String ' °O¿ý¡G¦Û°Ê¶}Ãö²§°Ê
     If g_Chinese Then S_LogAutoToggle = "¦Û°Ê¤Á´«§ï¬°¡G" & IIf(autoOn, "¶}", "Ãö") Else S_LogAutoToggle = "Auto switch: " & IIf(autoOn, "on", "off")
 End Function
-Public Function S_LogInit(ByVal isOn As Boolean, ByVal n As Long, ByVal d6 As String) As String ' °O¿ý¡Gªì©lª¬ºA
+Public Function S_LogInit(ByVal isOn As Boolean, ByVal d6 As String, ByVal nm As String) As String ' °O¿ý¡Gªì©lª¬ºA
     If g_Chinese Then
-        S_LogInit = "¤@¶}©l¿Ã¹õ¬O" & IIf(isOn, "¶}", "Ãö") & "¡]«GµÛ " & n & " ¥x¡A" & d6 & "¡^"
+        S_LogInit = nm & "ªì©lª¬ºA¡G" & IIf(isOn, "¶}", "Ãö") & "¡]" & d6 & "¡^"
     Else
-        S_LogInit = "At start, display is " & IIf(isOn, "ON", "OFF") & " (" & n & " lit, " & d6 & ")"
+        S_LogInit = nm & " initial: " & IIf(isOn, "ON", "OFF") & " (" & d6 & ")"
     End If
 End Function
-Public Function S_LogEvent(ByVal isOn As Boolean, ByVal n As Long, ByVal d6 As String) As String ' °O¿ý¡GÂ½Âà¨Æ¥ó
+Public Function S_LogEvent(ByVal isOn As Boolean, ByVal d6 As String, ByVal nm As String) As String ' °O¿ý¡GÂ½Âà¨Æ¥ó
     If g_Chinese Then
-        S_LogEvent = "°»´ú¨ì¿Ã¹õ¡G" & IIf(isOn, "¶}", "Ãö") & "¡]«GµÛ " & n & " ¥x¡A" & d6 & "¡^"
+        S_LogEvent = nm & "¡G" & IIf(isOn, "¶}", "Ãö") & "¡]" & d6 & "¡^"
     Else
-        S_LogEvent = "Display detected: " & IIf(isOn, "ON", "OFF") & " (" & n & " lit, " & d6 & ")"
+        S_LogEvent = nm & ": " & IIf(isOn, "ON", "OFF") & " (" & d6 & ")"
     End If
 End Function
 Public Function S_LogDirDisabled(ByVal isOn As Boolean) As String ' °O¿ý¡G¤è¦V³Q°±¥Î
@@ -102,9 +102,9 @@ Public Function S_LogSkip(ByVal isOn As Boolean) As String ' °O¿ý¡G±Æµ{¤¤³~¨ú®ø
 End Function
 Public Function S_LogCancel(ByVal wasOn As Boolean) As String ' °O¿ý¡G±Æµ{³QÂÐ¼g¨ú®ø
     If g_Chinese Then
-        S_LogCancel = IIf(wasOn, "³q¹q", "Â_¹q") & "¬yµ{¨ú®ø¡G¤¤³~ª¬ºA¤SÅÜ¡A³o¦¸¤£°µ"
+        S_LogCancel = IIf(wasOn, "³q¹q", "Â_¹q") & "¬yµ{¨ú®ø¡G¤¤³~ª¬ºA¤SÅÜ¡A¨ú®ø¬yµ{"
     Else
-        S_LogCancel = IIf(wasOn, "Power-on", "Power-off") & " plan cancelled mid-way"
+        S_LogCancel = IIf(wasOn, "Power-on", "Power-off") & " plan cancelled"
     End If
 End Function
 Public Function S_LogNativeTryOn() As String ' °O¿ý¡G¹Á¸Õ¶} HDR
@@ -123,9 +123,9 @@ Public Function S_LogNativeResult(ByVal ok As Boolean, ByVal st As Long) As Stri
         Case Else: s = IIf(g_Chinese, "¥¼ª¾", "UNKNOWN")
     End Select
     If g_Chinese Then
-        S_LogNativeResult = "HDR µ²ªG¡G" & IIf(ok, "¦¨¥\", "¥¢±Ñ") & "¡A²{¦b¬O" & s
+        S_LogNativeResult = "HDR µ²ªG¡G" & IIf(ok, "¦¨¥\", "¥¢±Ñ") & "¡AHDR²{¦b¬O" & s
     Else
-        S_LogNativeResult = "HDR: " & IIf(ok, "ok", "failed") & ", now " & s
+        S_LogNativeResult = "HDR: " & IIf(ok, "ok", "failed") & ", HDR now " & s
     End If
 End Function
 Public Function S_LogNativeSkip() As String ' °O¿ý¡G²¤¹L HDR
@@ -181,7 +181,7 @@ Public Function S_LogWaitAfterClean(ByVal sec As Long) As String ' °O¿ý¡G²M«áµ¥«
     If g_Chinese Then S_LogWaitAfterClean = "²M§¹µ¥ " & sec & " ¬í¦A­«¶}" Else S_LogWaitAfterClean = "Wait " & sec & "s after clean"
 End Function
 Public Function S_LogShellSkipEmpty() As String ' °O¿ý¡GShell ªÅ¥Õ¸õ¹L
-    If g_Chinese Then S_LogShellSkipEmpty = "¨S¶ñ Shell¡A¤£¶]ÃB¥~«ü¥O" Else S_LogShellSkipEmpty = "No Shell configured, skipped"
+    If g_Chinese Then S_LogShellSkipEmpty = "Shell ªÅ¥Õ©Î¤£¦s¦b¡A¤£¶]ÃB¥~«ü¥O" Else S_LogShellSkipEmpty = "Shell empty or missing, skipped"
 End Function
 Public Function S_LogShellSkipMissing(ByVal p As String) As String ' °O¿ý¡GShell ¥Ø¼Ð¿ò¥¢
     If g_Chinese Then S_LogShellSkipMissing = "Shell ÀÉ®×¤£¦b¤F¡A¸õ¹L¡G" & p Else S_LogShellSkipMissing = "Shell target missing, skipped: " & p
@@ -192,8 +192,8 @@ End Function
 Public Function S_LogShellLaunch() As String ' °O¿ý¡GShell ¤w±Ò°Ê¤£µ¥­Ô
     If g_Chinese Then S_LogShellLaunch = "Shell ¤w±Ò°Ê¡A¤£µ¥¥¦¶]§¹" Else S_LogShellLaunch = "Shell launched, not waiting"
 End Function
-Public Function S_LogPhaseDone(ByVal isOn As Boolean) As String ' °O¿ý¡G¾ãÃì§¹¦¨
-    If g_Chinese Then S_LogPhaseDone = IIf(isOn, "³q¹q", "Â_¹q") & "¬yµ{µ²§ô" Else S_LogPhaseDone = IIf(isOn, "Power-on", "Power-off") & " done"
+Public Function S_LogPhaseDone(ByVal isOn As Boolean, ByVal nm As String) As String ' °O¿ý¡G¾ãÃì§¹¦¨
+    If g_Chinese Then S_LogPhaseDone = nm & " " & IIf(isOn, "³q¹q¬yµ{µ²§ô", "Â_¹q¬yµ{µ²§ô") Else S_LogPhaseDone = nm & " " & IIf(isOn, "power-on done", "power-off done")
 End Function
 Public Function S_LogDdcErr(ByVal m As String) As String ' °O¿ý¡G°»´ú¿ù»~¡]ÂÂ¦W«O¯d¡^
     If g_Chinese Then S_LogDdcErr = "¿Ã¹õ°»´ú¥X¿ù¡]DDC¡^¡G" & m Else S_LogDdcErr = "Display probe error (DDC): " & m
