@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net472</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWindowsForms>true</UseWindowsForms>
+    <AssemblyName>AutoHdrMode</AssemblyName>
+    <RootNamespace>AutoHdrMode</RootNamespace>
+    <!-- WinExe => no console window, no taskbar button (NotifyIcon only) -->
+    <!-- net472 => runs on company PC's built-in .NET Framework, no runtime install -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- System.Management is inbox on .NET Framework (GAC) -->
+    <Reference Include="System.Management" />
+    <PackageReference Include="System.Text.Json" Version="8.0.5" />
+  </ItemGroup>
+
+</Project>

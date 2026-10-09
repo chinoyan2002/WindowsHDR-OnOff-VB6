@@ -1,0 +1,10 @@
+# VB6 產出與暫存：不進版控，重編即有
+*.exe
+*.log
+build.log
+*.vbw
+*.bak_r1
+E_Temp/
+# archive 內的 C# 建置產出：不進版控
+archive/**/bin/
+archive/**/obj/
