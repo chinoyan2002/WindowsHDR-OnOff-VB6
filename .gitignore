@@ -3,8 +3,19 @@
 *.log
 build.log
 *.vbw
-*.bak_r1
 E_Temp/
-# archive 內的 C# 建置產出：不進版控
+# Local backup files
+*.bak
+*.bak_r1
+# Runtime capture
+ahv_enum.txt
+# .NET / VS artifacts
+bin/
+obj/
+.vs/
+*.user
+*.suo
+# archive 內的 C# 建置產出與快照：不進版控
 archive/**/bin/
 archive/**/obj/
+archive/snap-*/
