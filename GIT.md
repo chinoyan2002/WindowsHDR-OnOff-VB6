@@ -6,6 +6,7 @@
 
 ## LOG
 ```
+ee1117e GIT.md: record remote URL + push log
 c090f01 Merge remote master (unrelated baseline); keep local flat tree + reviewed fixes
 19e2e41 Add GIT.md (remote pending)
 716e683 Review loop clean + startup补跑 + SPEC/README/HANDOFF sync (exe v1.0.33)
